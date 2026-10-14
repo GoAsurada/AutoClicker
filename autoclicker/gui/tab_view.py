@@ -350,6 +350,20 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         self.templates_frame = ctk.CTkScrollableFrame(self.tab_primary)
         self.templates_frame.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        self.primary_pager = ctk.CTkFrame(self.tab_primary, fg_color="transparent")
+        self.primary_pager.pack(fill="x", padx=5, pady=(0, 5))
+        self.primary_prev_btn = ctk.CTkButton(
+            self.primary_pager, text="◀ 이전", width=65,
+            command=lambda: self.change_template_page(-1, False),
+        )
+        self.primary_prev_btn.pack(side="left")
+        self.primary_page_label = ctk.CTkLabel(self.primary_pager, text="1 / 1")
+        self.primary_page_label.pack(side="left", expand=True)
+        self.primary_next_btn = ctk.CTkButton(
+            self.primary_pager, text="다음 ▶", width=65,
+            command=lambda: self.change_template_page(1, False),
+        )
+        self.primary_next_btn.pack(side="right")
 
         # --- Setup Fallback Tab ---
         self.fallback_header_frame = ctk.CTkFrame(self.tab_fallback, fg_color="transparent")
@@ -429,6 +443,20 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         self.fallback_templates_frame = ctk.CTkScrollableFrame(self.tab_fallback)
         self.fallback_templates_frame.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        self.fallback_pager = ctk.CTkFrame(self.tab_fallback, fg_color="transparent")
+        self.fallback_pager.pack(fill="x", padx=5, pady=(0, 5))
+        self.fallback_prev_btn = ctk.CTkButton(
+            self.fallback_pager, text="◀ 이전", width=65,
+            command=lambda: self.change_template_page(-1, True),
+        )
+        self.fallback_prev_btn.pack(side="left")
+        self.fallback_page_label = ctk.CTkLabel(self.fallback_pager, text="1 / 1")
+        self.fallback_page_label.pack(side="left", expand=True)
+        self.fallback_next_btn = ctk.CTkButton(
+            self.fallback_pager, text="다음 ▶", width=65,
+            command=lambda: self.change_template_page(1, True),
+        )
+        self.fallback_next_btn.pack(side="right")
 
         # --- Fallback Final Action Control (Bottom Panel) ---
         self.fallback_final_frame = ctk.CTkFrame(self.tab_fallback, fg_color=COLOR_CARD_BG, corner_radius=RADIUS_MD)
