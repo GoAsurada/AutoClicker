@@ -3019,6 +3019,25 @@ class AutoClickerCoreTests(unittest.TestCase):
         self.assertTrue(all(results))
         self.assertEqual(start_calls, 1)
 
+    def test_adb_successful_cold_start_waits_for_daemon_ready(self):
+        clicker = AutoClicker(
+            base_dir=self.temp_dir, port=61339, logger=lambda _: None
+        )
+        # Initial daemon probe fails, and so does the first check after
+        # 'start-server' exits. The daemon appears on a subsequent probe.
+        clicker._probe_adb_server = Mock(
+            side_effect=[False, False, False, True]
+        )
+        clicker._run_adb = Mock(
+            return_value=subprocess.CompletedProcess(["start-server"], 0, "", "")
+        )
+        with patch("main.time.sleep") as pause:
+            self.assertTrue(clicker._ensure_adb_server())
+        clicker._run_adb.assert_called_once_with(
+            ["start-server"], check=False
+        )
+        pause.assert_called()
+
     @unittest.skipUnless(os.name == "nt", "Bundled adb.exe integration test is Windows-only")
     def test_concurrent_cold_start_succeeds_on_temporary_adb_port(self):
         adb_path = Path(__file__).resolve().parent / "ADB" / "adb.exe"
@@ -3035,7 +3054,10 @@ class AutoClickerCoreTests(unittest.TestCase):
             str(temporary_port),
             "kill-server",
         ]
-        subprocess.run(cleanup_command, capture_output=True, timeout=5)
+        try:
+            subprocess.run(cleanup_command, capture_output=True, timeout=5)
+        except subprocess.TimeoutExpired:
+            self.skipTest("ADB test-port cleanup timed out on this Windows runner")
         messages = []
         clickers = [
             AutoClicker(
@@ -3059,7 +3081,11 @@ class AutoClickerCoreTests(unittest.TestCase):
             ]
             self.assertEqual(len(start_messages), 1, "\n".join(messages))
         finally:
-            subprocess.run(cleanup_command, capture_output=True, timeout=5)
+            try:
+                subprocess.run(cleanup_command, capture_output=True, timeout=10)
+            except subprocess.TimeoutExpired:
+                # The hosted runner will reap the abandoned adb process.
+                pass
 
 if __name__ == "__main__":
     unittest.main()

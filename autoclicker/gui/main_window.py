@@ -65,16 +65,20 @@ from autoclicker.gui.dialogs import (
     AddInstanceWindow,
 )
 from autoclicker.gui.tab_view import InstanceTabFrame
+from autoclicker.gui.font_setup import configure_app_fonts
+from autoclicker.gui.device_discovery import discover_devices
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
+        self.ui_font_family = configure_app_fonts(self)
 
         self.title(f"Auto Clicker {VERSION}")
         self.geometry("1300x760")
         self.minsize(1050, 600)
         
         self.tab_frames = {}
+        self.warning_tabs = set()
         self.tab_counter = 0
         self._closing = False
         self._start_all_generation = 0
@@ -171,11 +175,25 @@ class App(ctk.CTk):
             command=self.open_global_settings
         )
         self.settings_btn.pack(side="right", padx=(4, 16), pady=8)
+        self.instance_selector = ctk.CTkOptionMenu(
+            self.top_bar, values=["인스턴스 선택"], width=140,
+            height=34, font=ctk.CTkFont(size=12),
+            command=self._select_instance,
+        )
+        self.instance_selector.pack(side="right", padx=(4, 8), pady=8)
+        self.warning_button = ctk.CTkButton(
+            self.top_bar, text="⚠ 0", width=45, height=34,
+            fg_color=COLOR_WARNING, hover_color=COLOR_WARNING_HOVER,
+            command=self._jump_to_warning, state="disabled",
+        )
+        self.warning_button.pack(side="right", padx=(2, 4), pady=8)
 
 
         # --- Main Workspace: Tab View ---
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        # Avoid unbounded segmented control width with many instances.
+        self.tabview._segmented_button.grid_remove()
         try:
             self.tabview._segmented_button.configure(font=ctk.CTkFont(size=12, weight="bold"))
         except Exception:
@@ -190,6 +208,30 @@ class App(ctk.CTk):
 
         # Auto refresh devices after short delay
         self.after(500, self.refresh_all_devices)
+
+    def update_instance_warning(self, tab_name, is_warning):
+        if is_warning == (tab_name in self.warning_tabs):
+            return
+        if is_warning:
+            self.warning_tabs.add(tab_name)
+        else:
+            self.warning_tabs.discard(tab_name)
+        count = len(self.warning_tabs)
+        self.warning_button.configure(
+            text=f"⚠ {count}", state="normal" if count else "disabled"
+        )
+
+    def _jump_to_warning(self):
+        for tab_name in self.tab_frames:
+            if tab_name in self.warning_tabs:
+                self._select_instance(tab_name)
+                return
+
+    def _select_instance(self, tab_name):
+        if tab_name not in self.tab_frames:
+            return
+        self.tabview.set(tab_name)
+        self.tab_frames[tab_name].ensure_templates_rendered()
 
     def get_current_tab_frame(self):
         try:
@@ -240,7 +282,10 @@ class App(ctk.CTk):
     def _drain_ui_queue(self):
         if self._closing:
             return
-        for _ in range(100):
+        started = time.perf_counter()
+        for _ in range(40):
+            if time.perf_counter() - started > 0.008:
+                break
             try:
                 callback = self._ui_queue.get_nowait()
             except queue.Empty:
@@ -260,6 +305,10 @@ class App(ctk.CTk):
             current_tab = None
 
         now = time.monotonic()
+        if current_tab in self.tab_frames:
+            self.tab_frames[current_tab].ensure_templates_rendered()
+            if self.instance_selector.get() != current_tab:
+                self.instance_selector.set(current_tab)
         for name, frame in tuple(self.tab_frames.items()):
             try:
                 if name == current_tab:
@@ -305,7 +354,8 @@ class App(ctk.CTk):
 
         if first_tab:
             self.tabview.set(first_tab)
-            self.after(100, lambda: self.tabview.set(first_tab))
+            self.instance_selector.set(first_tab)
+            self.tab_frames[first_tab].ensure_templates_rendered()
 
         if config.get("reset_counts_on_startup", False):
             self.reset_all_template_counts(is_fallback=False)
@@ -353,8 +403,11 @@ class App(ctk.CTk):
         )
         frame.pack(fill="both", expand=True)
         self.tab_frames[tab_name] = frame
-        self.tabview.set(tab_name)
+        self.instance_selector.configure(values=list(self.tab_frames))
         if not self._initializing_tabs:
+            self.tabview.set(tab_name)
+            self.instance_selector.set(tab_name)
+            frame.ensure_templates_rendered()
             self.save_app_config()
         return frame
 
@@ -368,12 +421,22 @@ class App(ctk.CTk):
         if frame is None:
             return
         frame.shutdown()
+        self.update_instance_warning(tab_name, False)
         self.tabview.delete(tab_name)
+        self.instance_selector.configure(values=list(self.tab_frames))
+        current = self.tabview.get()
+        self.instance_selector.set(current)
+        if current in self.tab_frames:
+            self.tab_frames[current].ensure_templates_rendered()
         self.save_app_config()
 
     def refresh_all_tabs_templates(self):
+        active = self.tabview.get()
         for frame in tuple(self.tab_frames.values()):
-            frame.refresh_templates()
+            if frame.tab_name == active:
+                frame.refresh_templates()
+            else:
+                frame._templates_rendered = False
 
     def update_all_template_actions(self, filename, action, is_fallback=False):
         action_text, action_fg, action_hover = get_action_button_style(action)
@@ -480,9 +543,8 @@ class App(ctk.CTk):
                 order.append(filename)
             idx = order.index(filename)
             row_dict = frame.fallback_template_row_widgets if is_fallback else frame.template_row_widgets
-            if filename not in row_dict:
-                frame.create_template_row(parent, filename, idx, is_fallback=is_fallback)
-            frame.filter_templates(is_fallback=is_fallback)
+            if getattr(frame, "_templates_rendered", False):
+                frame.filter_templates(is_fallback=is_fallback)
 
     def reset_all_template_counts(self, is_fallback=False):
         for frame in tuple(self.tab_frames.values()):
@@ -540,7 +602,12 @@ class App(ctk.CTk):
     def refresh_all_devices(self):
         def task():
             dummy_clicker = AutoClicker()
-            devices = dummy_clicker.get_connected_devices()
+            try:
+                devices = discover_devices(dummy_clicker)
+            except Exception:
+                devices = []
+            finally:
+                dummy_clicker.shutdown()
 
             def update_ui():
                 if self._closing:

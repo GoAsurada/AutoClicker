@@ -14,6 +14,11 @@ extra_datas = [
     ("LICENSE", "."),
 ]
 
+# Pretendard fonts are prepared from the official upstream distribution
+# by the Windows build job. Source runs can use a locally installed copy.
+if os.path.isdir(os.path.join("assets", "fonts")):
+    extra_datas.append((os.path.join("assets", "fonts"), os.path.join("assets", "fonts")))
+
 # Tcl/Tk support for Python 3.14+ (where Tcl 9 zipfs is used) and standard Python versions
 base_prefix = getattr(sys, "base_prefix", sys.prefix)
 tcl_base_dir = os.path.join(base_prefix, "tcl")
