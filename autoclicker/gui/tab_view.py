@@ -1079,42 +1079,89 @@ class InstanceTabFrame(ctk.CTkFrame):
         except Exception:
             pass
 
+    def ensure_templates_rendered(self):
+        if self._destroyed or self._templates_rendered:
+            return
+        self.refresh_templates()
+
+    def schedule_template_filter(self, is_fallback=False):
+        """Coalesce quick keystrokes before changing rendered widgets."""
+        if not self._templates_rendered or self._destroyed:
+            return
+        pending = self._search_debounce_ids.get(is_fallback)
+        if pending is not None:
+            try:
+                self.after_cancel(pending)
+            except Exception:
+                pass
+        self._search_debounce_ids[is_fallback] = self.after(
+            140, lambda fb=is_fallback: self._apply_scheduled_filter(fb)
+        )
+
+    def _apply_scheduled_filter(self, is_fallback):
+        self._search_debounce_ids[is_fallback] = None
+        self._template_pages[is_fallback] = 0
+        self.filter_templates(is_fallback=is_fallback)
+
+    def change_template_page(self, offset, is_fallback=False):
+        if not self._templates_rendered:
+            return
+        self._template_pages[is_fallback] += offset
+        self.filter_templates(is_fallback=is_fallback)
+
     def filter_templates(self, is_fallback=False):
-        if self._destroyed or not self.winfo_exists():
+        """Only instantiate the visible page; never O(total templates) Tk widgets."""
+        if not self._templates_rendered or self._destroyed or not self.winfo_exists():
             return
         query = (
             self.fallback_search_var.get() if is_fallback else self.primary_search_var.get()
-        ).strip().lower()
-        order = self.clicker.fallback_template_order if is_fallback else self.clicker.template_order
-        row_dict = self.fallback_template_row_widgets if is_fallback else self.template_row_widgets
-
-        visible_count = 0
-        for filename in order:
-            if filename in row_dict:
-                w = row_dict[filename]
-                if not query or query in filename.lower():
-                    w.frame.pack(fill="x", padx=5, pady=1)
-                    visible_count += 1
-                else:
-                    w.frame.pack_forget()
-
-        parent_frame = self.fallback_templates_frame if is_fallback else self.templates_frame
-        attr_name = "fb_no_match_label" if is_fallback else "primary_no_match_label"
-        lbl = getattr(self, attr_name, None)
-
-        if visible_count == 0 and len(order) > 0 and query:
-            if lbl is None or not lbl.winfo_exists():
-                lbl = ctk.CTkLabel(
-                    parent_frame,
-                    text="🔍 일치하는 템플릿이 없습니다.",
+        ).strip()
+        order = (
+            self.clicker.fallback_template_order
+            if is_fallback else self.clicker.template_order
+        )
+        page_items, page, pages, total = select_template_page(
+            order, query=query, page=self._template_pages[is_fallback],
+            page_size=DEFAULT_PAGE_SIZE,
+        )
+        self._template_pages[is_fallback] = page
+        row_dict = (
+            self.fallback_template_row_widgets
+            if is_fallback else self.template_row_widgets
+        )
+        counts_dict = (
+            self.fallback_template_count_labels
+            if is_fallback else self.template_count_labels
+        )
+        parent = (
+            self.fallback_templates_frame if is_fallback else self.templates_frame
+        )
+        visible_key = (tuple(page_items), query)
+        if visible_key != self._template_visible[is_fallback]:
+            TemplatePreviewTooltip.get_instance(self.winfo_toplevel()).hide()
+            for child in parent.winfo_children():
+                child.destroy()
+            row_dict.clear()
+            counts_dict.clear()
+            for priority_index, filename in page_items:
+                self.create_template_row(
+                    parent, filename, priority_index, is_fallback=is_fallback
+                )
+            if total == 0:
+                ctk.CTkLabel(
+                    parent,
+                    text=("일치하는 템플릿이 없습니다." if query else "등록된 템플릿이 없습니다."),
                     font=ctk.CTkFont(size=12),
                     text_color=COLOR_TEXT_MUTED,
-                )
-                setattr(self, attr_name, lbl)
-            lbl.pack(pady=20)
-        else:
-            if lbl is not None and lbl.winfo_exists():
-                lbl.pack_forget()
+                ).pack(pady=20)
+            self._template_visible[is_fallback] = visible_key
+
+        label = self.fallback_page_label if is_fallback else self.primary_page_label
+        prev_btn = self.fallback_prev_btn if is_fallback else self.primary_prev_btn
+        next_btn = self.fallback_next_btn if is_fallback else self.primary_next_btn
+        label.configure(text=f"{page + 1} / {pages}  (전체 {total}개)")
+        prev_btn.configure(state="normal" if page > 0 else "disabled")
+        next_btn.configure(state="normal" if page < pages - 1 else "disabled")
 
     def refresh_templates(self):
         if self._destroyed or not self.winfo_exists():
@@ -1122,26 +1169,15 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         TemplatePreviewTooltip.get_instance(self.winfo_toplevel()).hide()
         self.clicker.load_config()
-        self.template_row_widgets = {}
-        self.fallback_template_row_widgets = {}
-        self.template_count_labels = {}
-        self.fallback_template_count_labels = {}
-        self.primary_no_match_label = None
-        self.fb_no_match_label = None
-
-        # 1. 기본 템플릿 목록 렌더링
-        for widget in self.templates_frame.winfo_children():
-            widget.destroy()
-
-        for i, filename in enumerate(self.clicker.template_order):
-            self.create_template_row(self.templates_frame, filename, i, is_fallback=False)
-
-        # 2. 미매칭 복구 템플릿 목록 렌더링
-        for widget in self.fallback_templates_frame.winfo_children():
-            widget.destroy()
-
-        for i, filename in enumerate(self.clicker.fallback_template_order):
-            self.create_template_row(self.fallback_templates_frame, filename, i, is_fallback=True)
+        self._templates_rendered = True
+        self._template_visible = {False: None, True: None}
+        self.template_row_widgets.clear()
+        self.fallback_template_row_widgets.clear()
+        self.template_count_labels.clear()
+        self.fallback_template_count_labels.clear()
+        for parent in (self.templates_frame, self.fallback_templates_frame):
+            for child in parent.winfo_children():
+                child.destroy()
 
         if hasattr(self, 'fb_final_combo') and self.fb_final_combo.winfo_exists():
             curr_fb_action = getattr(self.clicker, 'fallback_final_action', 'none')
