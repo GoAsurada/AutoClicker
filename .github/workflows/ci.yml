@@ -28,7 +28,7 @@ jobs:
         run: python -m unittest discover -s . -p "test_*.py"
 
   build:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     needs: tests
     runs-on: windows-latest
     permissions:
