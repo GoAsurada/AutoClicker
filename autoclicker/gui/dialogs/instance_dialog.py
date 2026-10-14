@@ -21,6 +21,7 @@ from autoclicker.core.constants import (
 )
 from autoclicker.core.environment import get_default_adb_path, resolve_adb_path
 from autoclicker.core.clicker import AutoClicker
+from autoclicker.gui.device_discovery import discover_devices
 from autoclicker.gui.theme import (
     COLOR_PRIMARY,
     COLOR_PRIMARY_HOVER,
@@ -114,35 +115,98 @@ class AddInstanceWindow(ctk.CTkToplevel):
         )
         self.add_and_connect_btn.pack(side="right", fill="x", expand=True, padx=(5, 0))
 
-        # 스레드로 디바이스 목록 검색
-        threading.Thread(target=self.fetch_devices, daemon=True).start()
+        # A plain refresh reads 'adb devices' only. Broad port probing requires
+        # a separate, explicit user click to avoid touching unrelated services.
+        self.scan_controls = ctk.CTkFrame(self.dev_frame, fg_color="transparent")
+        self.scan_controls.pack(fill="x", padx=10, pady=(0, 5), before=self.scroll_frame)
+        self.refresh_btn = ctk.CTkButton(
+            self.scan_controls, text="↻ 연결 목록 갱신", width=135,
+            command=lambda: self.start_device_scan(scan_ports=False),
+        )
+        self.refresh_btn.pack(side="left", padx=(0, 6))
+        self.port_scan_btn = ctk.CTkButton(
+            self.scan_controls, text="🔎 전체 포트 탐색", width=135,
+            fg_color=COLOR_NEUTRAL, hover_color=COLOR_NEUTRAL_HOVER,
+            command=lambda: self.start_device_scan(scan_ports=True),
+        )
+        self.port_scan_btn.pack(side="left")
+        self._scan_busy = False
+        self.start_device_scan()
 
-    def fetch_devices(self):
-        dummy = AutoClicker()
-        devices = dummy.get_connected_devices()
-        
+    def start_device_scan(self, scan_ports=False):
+        """Prevent parallel scans and keep all Tk mutations on the UI thread."""
+        if self._scan_busy:
+            return
+        self._scan_busy = True
+        self.refresh_btn.configure(state="disabled")
+        self.port_scan_btn.configure(state="disabled")
+        self.loading_label = ctk.CTkLabel(
+            self.scroll_frame,
+            text=("ADB 전체 포트 검색 중..." if scan_ports else "연결된 ADB 장치 확인 중..."),
+            text_color=COLOR_TEXT_MUTED,
+        )
+        self.loading_label.pack(pady=8)
+        threading.Thread(
+            target=self.fetch_devices, args=(scan_ports,), daemon=True
+        ).start()
+
+    def fetch_devices(self, scan_ports=False):
+        devices, error_message = [], None
+        dummy = None
+        try:
+            dummy = AutoClicker()
+            devices = discover_devices(dummy, scan_ports=scan_ports)
+        except Exception as error:
+            error_message = str(error)
+        finally:
+            if dummy is not None:
+                try:
+                    dummy.shutdown()
+                except Exception:
+                    pass
+
         def update_ui():
             if not self.winfo_exists():
                 return
-            self.loading_label.destroy()
-            
-            existing_addrs = [f.clicker.device_address for f in self.parent_app.tab_frames.values()]
-            
+            self._scan_busy = False
+            self.refresh_btn.configure(state="normal")
+            self.port_scan_btn.configure(state="normal")
+            for child in self.scroll_frame.winfo_children():
+                child.destroy()
+            self.checkbox_vars.clear()
+
+            if error_message:
+                ctk.CTkLabel(
+                    self.scroll_frame,
+                    text=f"ADB 조회 오류: {error_message}",
+                    text_color=COLOR_DANGER,
+                    wraplength=370,
+                ).pack(pady=12)
+                return
+
+            existing_addrs = {
+                frame.clicker.device_address
+                for frame in self.parent_app.tab_frames.values()
+            }
             if not devices:
-                no_dev = ctk.CTkLabel(self.scroll_frame, text="현재 자동 감지된 ADB 디바이스가 없습니다.\n아래 수동 입력을 이용하거나 에뮬레이터를 먼저 실행하세요.", text_color="orange")
-                no_dev.pack(pady=20)
+                ctk.CTkLabel(
+                    self.scroll_frame,
+                    text="ADB에 연결된 장치가 없습니다.\\n"
+                         "기존 장치를 갱신하거나 '전체 포트 탐색'을 선택하세요.",
+                    text_color=COLOR_WARNING,
+                ).pack(pady=16)
                 return
 
             for dev in devices:
-                var = ctk.BooleanVar(value=True)
-                self.checkbox_vars[dev] = var
-                
                 is_already = dev in existing_addrs
-                label_text = f"{dev} (이미 추가됨)" if is_already else dev
-                
-                chk = ctk.CTkCheckBox(self.scroll_frame, text=label_text, variable=var)
+                var = ctk.BooleanVar(value=not is_already)
+                self.checkbox_vars[dev] = var
+                chk = ctk.CTkCheckBox(
+                    self.scroll_frame,
+                    text=f"{dev} (이미 추가됨)" if is_already else dev,
+                    variable=var,
+                )
                 if is_already:
-                    var.set(False)
                     chk.configure(state="disabled")
                 chk.pack(anchor="w", padx=10, pady=5)
 
@@ -164,7 +228,7 @@ class AddInstanceWindow(ctk.CTkToplevel):
             return
 
         added_frames = []
-        for addr in to_add:
+        for addr in dict.fromkeys(to_add):
             frame = self.parent_app.add_instance_tab(device_address=addr)
             if frame:
                 added_frames.append(frame)
@@ -178,6 +242,11 @@ class AddInstanceWindow(ctk.CTkToplevel):
         self.destroy()
 
     def add_and_connect_all(self):
+        existing_addrs = {
+            frame.clicker.device_address
+            for frame in self.parent_app.tab_frames.values()
+        }
         for dev, var in self.checkbox_vars.items():
-            var.set(True)
+            if dev not in existing_addrs:
+                var.set(True)
         self.add_selected(auto_connect=True)
