@@ -85,7 +85,11 @@ class InstanceTabFrame(ctk.CTkFrame):
         self._action_threads_lock = threading.Lock()
         self._log_line_count = 1
         self._log_buffer = []
+        self._log_lock = threading.Lock()
         self._log_flush_scheduled = False
+        self._match_ui_lock = threading.Lock()
+        self._pending_match_counts = {}
+        self._match_ui_scheduled = False
         self._drag_positions = []
         self._timer_render_state = {}
         self._templates_rendered = False
@@ -589,21 +593,29 @@ class InstanceTabFrame(ctk.CTkFrame):
         if self._destroyed:
             return
         timestamp = time.strftime("[%H:%M:%S] ")
-        self._log_buffer.append(f"{timestamp}{message}\n")
-        if not self._log_flush_scheduled:
-            self._log_flush_scheduled = True
+        schedule_flush = False
+        with self._log_lock:
+            self._log_buffer.append(f"{timestamp}{message}\n")
+            # Bound backlog even when a device produces log spam.
+            if len(self._log_buffer) > 500:
+                del self._log_buffer[:-500]
+            if not self._log_flush_scheduled:
+                self._log_flush_scheduled = True
+                schedule_flush = True
+        if schedule_flush:
             self.app_owner.post_to_ui(self._flush_log_buffer)
 
     def _flush_log_buffer(self):
-        self._log_flush_scheduled = False
-        if self._destroyed or not self.winfo_exists():
+        with self._log_lock:
+            self._log_flush_scheduled = False
+            if self._destroyed or not self.winfo_exists():
+                self._log_buffer.clear()
+                return
+            if not self._log_buffer:
+                return
+            combined = "".join(self._log_buffer)
+            lines_count = len(self._log_buffer)
             self._log_buffer.clear()
-            return
-        if not self._log_buffer:
-            return
-        combined = "".join(self._log_buffer)
-        lines_count = len(self._log_buffer)
-        self._log_buffer.clear()
 
         try:
             self.log_textbox.configure(state="normal")
@@ -618,12 +630,28 @@ class InstanceTabFrame(ctk.CTkFrame):
             pass
 
     def on_template_match(self, filename, count, is_fallback):
-        self.app_owner.post_to_ui(self.clear_warning_ui)
-        self.app_owner.post_to_ui(
-            lambda: self.app_owner.update_template_count_for_all(
+        """Coalesce repeated updates instead of flooding the Tk event queue."""
+        schedule_update = False
+        with self._match_ui_lock:
+            self._pending_match_counts[(filename, bool(is_fallback))] = count
+            if not self._match_ui_scheduled:
+                self._match_ui_scheduled = True
+                schedule_update = True
+        if schedule_update:
+            self.app_owner.post_to_ui(self._apply_pending_matches)
+
+    def _apply_pending_matches(self):
+        with self._match_ui_lock:
+            pending = self._pending_match_counts
+            self._pending_match_counts = {}
+            self._match_ui_scheduled = False
+        if self._destroyed or not pending:
+            return
+        self.clear_warning_ui()
+        for (filename, is_fallback), count in pending.items():
+            self.app_owner.update_template_count_for_all(
                 filename, count, is_fallback
             )
-        )
 
     def _set_tab_warning_state(self, is_warning):
         if self._destroyed or not hasattr(self.app_owner, "tabview"):
