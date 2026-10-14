@@ -2745,6 +2745,20 @@ class AutoClicker:
                 if start_command_succeeded and self._probe_adb_server():
                     return True
 
+                # 'adb start-server' can exit successfully before the daemon
+                # accepts host-protocol requests on slower Windows hosts.
+                # Give that launch time to become ready instead of repeatedly
+                # spawning a second start command against the same port.
+                if start_command_succeeded:
+                    deadline = time.monotonic() + 1.2
+                    while time.monotonic() < deadline:
+                        if self._operation_cancelled():
+                            return False
+                        time.sleep(min(0.15, max(0.01, deadline - time.monotonic())))
+                        if self._probe_adb_server():
+                            self.log("ADB 서버 시작 완료 후 연결 준비를 확인했습니다.")
+                            return True
+
                 delay = ADB_SERVER_RETRY_DELAYS[
                     min(attempt - 1, len(ADB_SERVER_RETRY_DELAYS) - 1)
                 ]
