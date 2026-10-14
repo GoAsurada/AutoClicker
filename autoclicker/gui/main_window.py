@@ -210,6 +210,8 @@ class App(ctk.CTk):
         self.after(500, self.refresh_all_devices)
 
     def update_instance_warning(self, tab_name, is_warning):
+        if is_warning == (tab_name in self.warning_tabs):
+            return
         if is_warning:
             self.warning_tabs.add(tab_name)
         else:
