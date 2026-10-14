@@ -65,10 +65,13 @@ from autoclicker.gui.dialogs import (
     AddInstanceWindow,
 )
 from autoclicker.gui.tab_view import InstanceTabFrame
+from autoclicker.gui.font_setup import configure_app_fonts
+from autoclicker.gui.device_discovery import discover_devices
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
+        self.ui_font_family = configure_app_fonts(self)
 
         self.title(f"Auto Clicker {VERSION}")
         self.geometry("1300x760")
@@ -171,11 +174,19 @@ class App(ctk.CTk):
             command=self.open_global_settings
         )
         self.settings_btn.pack(side="right", padx=(4, 16), pady=8)
+        self.instance_selector = ctk.CTkOptionMenu(
+            self.top_bar, values=["인스턴스 선택"], width=235,
+            height=34, font=ctk.CTkFont(size=12),
+            command=self._select_instance,
+        )
+        self.instance_selector.pack(side="right", padx=(4, 8), pady=8)
 
 
         # --- Main Workspace: Tab View ---
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        # Avoid unbounded segmented control width with many instances.
+        self.tabview._segmented_button.grid_remove()
         try:
             self.tabview._segmented_button.configure(font=ctk.CTkFont(size=12, weight="bold"))
         except Exception:
@@ -190,6 +201,12 @@ class App(ctk.CTk):
 
         # Auto refresh devices after short delay
         self.after(500, self.refresh_all_devices)
+
+    def _select_instance(self, tab_name):
+        if tab_name not in self.tab_frames:
+            return
+        self.tabview.set(tab_name)
+        self.tab_frames[tab_name].ensure_templates_rendered()
 
     def get_current_tab_frame(self):
         try:
@@ -240,7 +257,10 @@ class App(ctk.CTk):
     def _drain_ui_queue(self):
         if self._closing:
             return
-        for _ in range(100):
+        started = time.perf_counter()
+        for _ in range(40):
+            if time.perf_counter() - started > 0.008:
+                break
             try:
                 callback = self._ui_queue.get_nowait()
             except queue.Empty:
@@ -260,6 +280,10 @@ class App(ctk.CTk):
             current_tab = None
 
         now = time.monotonic()
+        if current_tab in self.tab_frames:
+            self.tab_frames[current_tab].ensure_templates_rendered()
+            if self.instance_selector.get() != current_tab:
+                self.instance_selector.set(current_tab)
         for name, frame in tuple(self.tab_frames.items()):
             try:
                 if name == current_tab:
@@ -305,7 +329,8 @@ class App(ctk.CTk):
 
         if first_tab:
             self.tabview.set(first_tab)
-            self.after(100, lambda: self.tabview.set(first_tab))
+            self.instance_selector.set(first_tab)
+            self.tab_frames[first_tab].ensure_templates_rendered()
 
         if config.get("reset_counts_on_startup", False):
             self.reset_all_template_counts(is_fallback=False)
