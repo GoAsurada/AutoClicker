@@ -378,8 +378,11 @@ class App(ctk.CTk):
         )
         frame.pack(fill="both", expand=True)
         self.tab_frames[tab_name] = frame
-        self.tabview.set(tab_name)
+        self.instance_selector.configure(values=list(self.tab_frames))
         if not self._initializing_tabs:
+            self.tabview.set(tab_name)
+            self.instance_selector.set(tab_name)
+            frame.ensure_templates_rendered()
             self.save_app_config()
         return frame
 
@@ -394,11 +397,20 @@ class App(ctk.CTk):
             return
         frame.shutdown()
         self.tabview.delete(tab_name)
+        self.instance_selector.configure(values=list(self.tab_frames))
+        current = self.tabview.get()
+        self.instance_selector.set(current)
+        if current in self.tab_frames:
+            self.tab_frames[current].ensure_templates_rendered()
         self.save_app_config()
 
     def refresh_all_tabs_templates(self):
+        active = self.tabview.get()
         for frame in tuple(self.tab_frames.values()):
-            frame.refresh_templates()
+            if frame.tab_name == active:
+                frame.refresh_templates()
+            else:
+                frame._templates_rendered = False
 
     def update_all_template_actions(self, filename, action, is_fallback=False):
         action_text, action_fg, action_hover = get_action_button_style(action)
@@ -505,9 +517,8 @@ class App(ctk.CTk):
                 order.append(filename)
             idx = order.index(filename)
             row_dict = frame.fallback_template_row_widgets if is_fallback else frame.template_row_widgets
-            if filename not in row_dict:
-                frame.create_template_row(parent, filename, idx, is_fallback=is_fallback)
-            frame.filter_templates(is_fallback=is_fallback)
+            if getattr(frame, "_templates_rendered", False):
+                frame.filter_templates(is_fallback=is_fallback)
 
     def reset_all_template_counts(self, is_fallback=False):
         for frame in tuple(self.tab_frames.values()):
@@ -565,7 +576,12 @@ class App(ctk.CTk):
     def refresh_all_devices(self):
         def task():
             dummy_clicker = AutoClicker()
-            devices = dummy_clicker.get_connected_devices()
+            try:
+                devices = discover_devices(dummy_clicker)
+            except Exception:
+                devices = []
+            finally:
+                dummy_clicker.shutdown()
 
             def update_ui():
                 if self._closing:
