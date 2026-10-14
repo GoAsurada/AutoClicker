@@ -1111,6 +1111,39 @@ class InstanceTabFrame(ctk.CTkFrame):
 
     def filter_templates(self, is_fallback=False):
         """Only instantiate the visible page; never O(total templates) Tk widgets."""
+        # Legacy instances without paging state retain their original
+        # filtering semantics (also used by older integration tests).
+        if not isinstance(getattr(self, "_template_pages", None), dict):
+            if self._destroyed or not self.winfo_exists():
+                return
+            query = (
+                self.fallback_search_var.get()
+                if is_fallback else self.primary_search_var.get()
+            ).strip().lower()
+            order = (
+                self.clicker.fallback_template_order
+                if is_fallback else self.clicker.template_order
+            )
+            rows = (
+                self.fallback_template_row_widgets
+                if is_fallback else self.template_row_widgets
+            )
+            matches = 0
+            for filename in order:
+                if filename in rows:
+                    if not query or query in filename.lower():
+                        rows[filename].frame.pack(fill="x", padx=5, pady=1)
+                        matches += 1
+                    else:
+                        rows[filename].frame.pack_forget()
+            label = (
+                self.fb_no_match_label if is_fallback else self.primary_no_match_label
+            )
+            if matches == 0 and order and query and label is not None:
+                label.pack(pady=20)
+            elif label is not None and label.winfo_exists():
+                label.pack_forget()
+            return
         if not self._templates_rendered or self._destroyed or not self.winfo_exists():
             return
         query = (
