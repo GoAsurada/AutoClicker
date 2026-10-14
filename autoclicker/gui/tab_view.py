@@ -27,6 +27,7 @@ from autoclicker.core.constants import (
 )
 from autoclicker.core.environment import get_app_dir, get_default_adb_path, resolve_adb_path
 from autoclicker.core.clicker import AutoClicker
+from autoclicker.gui.paging import DEFAULT_PAGE_SIZE, select_template_page
 from autoclicker.gui.theme import (
     COLOR_PRIMARY,
     COLOR_PRIMARY_HOVER,
@@ -87,6 +88,16 @@ class InstanceTabFrame(ctk.CTkFrame):
         self._log_flush_scheduled = False
         self._drag_positions = []
         self._timer_render_state = {}
+        self._templates_rendered = False
+        self._template_pages = {False: 0, True: 0}
+        self._template_visible = {False: None, True: None}
+        self._search_debounce_ids = {False: None, True: None}
+        self.template_row_widgets = {}
+        self.fallback_template_row_widgets = {}
+        self.template_count_labels = {}
+        self.fallback_template_count_labels = {}
+        self.primary_no_match_label = None
+        self.fb_no_match_label = None
 
         self.clicker = AutoClicker(
             device_address=device_address,
@@ -319,7 +330,7 @@ class InstanceTabFrame(ctk.CTkFrame):
             font=ctk.CTkFont(size=12),
         )
         self.primary_search_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
-        self.primary_search_var.trace_add("write", lambda *args: self.filter_templates(is_fallback=False))
+        self.primary_search_var.trace_add("write", lambda *args: self.schedule_template_filter(is_fallback=False))
         self.primary_search_entry.bind("<Escape>", lambda e: self.clear_search(is_fallback=False))
 
         self.primary_clear_search_btn = ctk.CTkButton(
@@ -398,7 +409,7 @@ class InstanceTabFrame(ctk.CTkFrame):
             font=ctk.CTkFont(size=12),
         )
         self.fallback_search_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
-        self.fallback_search_var.trace_add("write", lambda *args: self.filter_templates(is_fallback=True))
+        self.fallback_search_var.trace_add("write", lambda *args: self.schedule_template_filter(is_fallback=True))
         self.fallback_search_entry.bind("<Escape>", lambda e: self.clear_search(is_fallback=True))
 
         self.fallback_clear_search_btn = ctk.CTkButton(
@@ -498,7 +509,7 @@ class InstanceTabFrame(ctk.CTkFrame):
         )
         self.fb_final_test_btn.pack(side="right", padx=(8, 12), pady=8)
 
-        self.refresh_templates()
+        # Render the first selected instance only; defer the others.
 
     def clear_log(self):
         try:
