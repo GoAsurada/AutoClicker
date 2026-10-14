@@ -657,6 +657,11 @@ class InstanceTabFrame(ctk.CTkFrame):
         if self._destroyed or not hasattr(self.app_owner, "tabview"):
             return
         try:
+            if hasattr(self.app_owner, "update_instance_warning"):
+                self.app_owner.update_instance_warning(self.tab_name, is_warning)
+        except Exception:
+            pass
+        try:
             segmented_btn = getattr(self.app_owner.tabview, "_segmented_button", None)
             if not segmented_btn or not hasattr(segmented_btn, "_buttons_dict"):
                 return
