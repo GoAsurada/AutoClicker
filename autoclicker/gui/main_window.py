@@ -78,6 +78,7 @@ class App(ctk.CTk):
         self.minsize(1050, 600)
         
         self.tab_frames = {}
+        self.warning_tabs = set()
         self.tab_counter = 0
         self._closing = False
         self._start_all_generation = 0
@@ -175,11 +176,17 @@ class App(ctk.CTk):
         )
         self.settings_btn.pack(side="right", padx=(4, 16), pady=8)
         self.instance_selector = ctk.CTkOptionMenu(
-            self.top_bar, values=["인스턴스 선택"], width=235,
+            self.top_bar, values=["인스턴스 선택"], width=140,
             height=34, font=ctk.CTkFont(size=12),
             command=self._select_instance,
         )
         self.instance_selector.pack(side="right", padx=(4, 8), pady=8)
+        self.warning_button = ctk.CTkButton(
+            self.top_bar, text="⚠ 0", width=45, height=34,
+            fg_color=COLOR_WARNING, hover_color=COLOR_WARNING_HOVER,
+            command=self._jump_to_warning, state="disabled",
+        )
+        self.warning_button.pack(side="right", padx=(2, 4), pady=8)
 
 
         # --- Main Workspace: Tab View ---
@@ -201,6 +208,22 @@ class App(ctk.CTk):
 
         # Auto refresh devices after short delay
         self.after(500, self.refresh_all_devices)
+
+    def update_instance_warning(self, tab_name, is_warning):
+        if is_warning:
+            self.warning_tabs.add(tab_name)
+        else:
+            self.warning_tabs.discard(tab_name)
+        count = len(self.warning_tabs)
+        self.warning_button.configure(
+            text=f"⚠ {count}", state="normal" if count else "disabled"
+        )
+
+    def _jump_to_warning(self):
+        for tab_name in self.tab_frames:
+            if tab_name in self.warning_tabs:
+                self._select_instance(tab_name)
+                return
 
     def _select_instance(self, tab_name):
         if tab_name not in self.tab_frames:
@@ -396,6 +419,7 @@ class App(ctk.CTk):
         if frame is None:
             return
         frame.shutdown()
+        self.update_instance_warning(tab_name, False)
         self.tabview.delete(tab_name)
         self.instance_selector.configure(values=list(self.tab_frames))
         current = self.tabview.get()
