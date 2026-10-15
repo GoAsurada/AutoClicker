@@ -86,6 +86,9 @@ class InstanceTabFrame(ctk.CTkFrame):
         self._action_threads_lock = threading.Lock()
         self._log_line_count = 1
         self._log_buffer = []
+        self._log_is_visible = False
+        self._last_log_flush_at = 0.0
+        self._log_flush_after_id = None
         self._log_lock = threading.Lock()
         self._log_flush_scheduled = False
         self._match_ui_lock = threading.Lock()
@@ -560,6 +563,8 @@ class InstanceTabFrame(ctk.CTkFrame):
         # Render the first selected instance only; defer the others.
 
     def clear_log(self):
+        with self._log_lock:
+            self._log_buffer.clear()
         try:
             self.log_textbox.configure(state="normal")
             self.log_textbox.delete("1.0", "end")
@@ -605,34 +610,65 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         self.app_owner.save_app_config()
 
+    def request_log_flush(self):
+        """Only the selected instance repaints its log; background logs buffer."""
+        if self._destroyed or not self._log_is_visible:
+            return
+        should_post = False
+        with self._log_lock:
+            if self._log_buffer and not self._log_flush_scheduled:
+                self._log_flush_scheduled = True
+                should_post = True
+        if should_post:
+            self.app_owner.post_to_ui(
+                self._flush_log_buffer,
+                coalesce_key=(self.tab_name, "log"),
+            )
+
     def log_message(self, message):
         if self._destroyed:
             return
-        timestamp = time.strftime("[%H:%M:%S] ")
-        schedule_flush = False
+        text = str(message)
+        # ADB failures sometimes include huge command output. No single
+        # message may grow the retained Tk log without bound.
+        if len(text) > 600:
+            text = text[:597] + "..."
+        line = f"{time.strftime('[%H:%M:%S] ')}{text}\n"
         with self._log_lock:
-            self._log_buffer.append(f"{timestamp}{message}\n")
-            # Bound backlog even when a device produces log spam.
-            if len(self._log_buffer) > 500:
-                del self._log_buffer[:-500]
-            if not self._log_flush_scheduled:
-                self._log_flush_scheduled = True
-                schedule_flush = True
-        if schedule_flush:
-            self.app_owner.post_to_ui(self._flush_log_buffer)
+            self._log_buffer.append(line)
+            if len(self._log_buffer) > 150:
+                del self._log_buffer[:-150]
+        if self._log_is_visible:
+            self.request_log_flush()
 
     def _flush_log_buffer(self):
-        with self._log_lock:
-            self._log_flush_scheduled = False
-            if self._destroyed or not self.winfo_exists():
+        if self._destroyed or not self.winfo_exists():
+            with self._log_lock:
                 self._log_buffer.clear()
-                return
+                self._log_flush_scheduled = False
+            return
+        self._log_flush_after_id = None
+        if not self._log_is_visible:
+            with self._log_lock:
+                self._log_flush_scheduled = False
+            return
+        remaining = 0.15 - (time.monotonic() - self._last_log_flush_at)
+        if remaining > 0:
+            self._log_flush_after_id = self.after(
+                max(1, int(remaining * 1000)), self._flush_log_buffer
+            )
+            return
+
+        with self._log_lock:
             if not self._log_buffer:
+                self._log_flush_scheduled = False
                 return
             combined = "".join(self._log_buffer)
             lines_count = len(self._log_buffer)
             self._log_buffer.clear()
+            self._log_flush_scheduled = False
 
+        self._last_log_flush_at = time.monotonic()
         try:
             self.log_textbox.configure(state="normal")
             self.log_textbox.insert("end", combined)
@@ -664,7 +700,9 @@ class InstanceTabFrame(ctk.CTkFrame):
             self._match_ui_scheduled = False
         if self._destroyed or not pending:
             return
-        self.clear_warning_ui()
+        if (self._alert_shown_for_current_timeout
+                or self.tab_name in getattr(self.app_owner, "warning_tabs", ())):
+            self.clear_warning_ui()
         for (filename, is_fallback), count in pending.items():
             self.app_owner.update_template_count_for_all(
                 filename, count, is_fallback
