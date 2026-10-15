@@ -62,6 +62,43 @@ class UIMessageStressTests(unittest.TestCase):
         self.assertLessEqual(max(map(len, dummy._log_buffer)), 630)
         dummy.request_log_flush.assert_not_called()
 
+    @unittest.skipUnless(__import__("sys").platform == "win32", "Windows Tk required")
+    def test_10_instance_gui_survives_20k_log_and_match_events(self):
+        from autoclicker.gui.main_window import App
+
+        config = {
+            "instances": [
+                {"device_address": f"127.0.0.1:{5557 + index * 2}"}
+                for index in range(10)
+            ],
+        }
+        with patch("autoclicker.gui.main_window.AutoClicker.read_config",
+                   return_value=config), patch.object(App, "save_app_config",
+                                                      return_value=None):
+            app = App()
+            app.withdraw()
+            try:
+                for frame in app.tab_frames.values():
+                    for i in range(2000):
+                        frame.log_message("ADB status " + str(i))
+                        frame.on_template_match("test.png", i, False)
+                stats = app.ui_backlog_stats()
+                self.assertLessEqual(stats["pending"], 25)
+                self.assertLessEqual(stats["peak_pending"], 25)
+                self.assertEqual(len(app.tab_frames), 10)
+                self.assertEqual(
+                    sum(frame._log_is_visible for frame in app.tab_frames.values()), 1
+                )
+                self.assertTrue(all(
+                    len(frame._log_buffer) <= 150
+                    for frame in app.tab_frames.values()
+                ))
+                app._drain_ui_queue()
+                app.update_idletasks()
+                self.assertLessEqual(app.ui_backlog_stats()["pending"], 25)
+            finally:
+                app.destroy()
+
     def test_global_modal_dialog_is_rate_limited(self):
         dummy = Mock()
         dummy._closing = False
