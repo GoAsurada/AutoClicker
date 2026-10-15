@@ -10,7 +10,7 @@ from autoclicker.core.environment import (
     ADB_PATH,
 )
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 __all__ = [
     "AutoClicker",

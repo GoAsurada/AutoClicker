@@ -60,6 +60,8 @@ class ScalableWindowTests(unittest.TestCase):
                 app.geometry("900x650")
                 app.update_idletasks()
                 self.assertEqual(len(app.tab_frames), 10)
+                self.assertEqual(len(app.instance_tabs.names), 10)
+                self.assertLess(app.instance_tabs.winfo_reqwidth(), 850)
                 self.assertLess(app.top_bar.winfo_reqwidth(), 900)
                 self.assertLess(app.tabview.winfo_reqwidth(), 1050)
                 initial = next(iter(app.tab_frames.values()))
@@ -81,6 +83,7 @@ class ScalableWindowTests(unittest.TestCase):
                 app._select_instance(last_name)
                 app.update_idletasks()
                 self.assertEqual(app.tabview.get(), last_name)
+                self.assertEqual(app.instance_tabs._selected, last_name)
                 self.assertEqual(
                     sum(
                         page.winfo_manager() == "pack"
