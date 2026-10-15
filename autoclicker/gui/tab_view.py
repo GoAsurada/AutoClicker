@@ -211,7 +211,7 @@ class InstanceTabFrame(ctk.CTkFrame):
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLOR_TEXT_MUTED
         )
-        self.no_match_timer_label.configure(wraplength=275)
+        self.no_match_timer_label.configure(wraplength=225)
         self.no_match_timer_label.pack(padx=10, pady=4)
 
         # 2. 매칭없음 경고 시간 카드
@@ -223,7 +223,7 @@ class InstanceTabFrame(ctk.CTkFrame):
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLOR_TEXT_MUTED
         )
-        self.timeout_timer_label.configure(wraplength=275)
+        self.timeout_timer_label.configure(wraplength=225)
         self.timeout_timer_label.pack(padx=10, pady=4)
 
         # 3. 최근 매칭 정보 카드
@@ -232,7 +232,7 @@ class InstanceTabFrame(ctk.CTkFrame):
         self.last_match_info_label = ctk.CTkLabel(
             self.card_last_match,
             text="🎯 최근 매칭: 대기 중",
-            wraplength=275,
+            wraplength=225,
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLOR_TEXT_MUTED
         )
@@ -274,7 +274,7 @@ class InstanceTabFrame(ctk.CTkFrame):
         )
         self.clear_log_btn.pack(side="right")
 
-        self.log_textbox = ctk.CTkTextbox(self.log_frame, width=350, corner_radius=RADIUS_SM)
+        self.log_textbox = ctk.CTkTextbox(self.log_frame, width=230, corner_radius=RADIUS_SM)
         self.log_textbox.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
         self.log_textbox.insert("0.0", f"Initialized Tab [{self.tab_name}] for ADB device [{self.clicker.device_address}]\n")
         self.log_textbox.configure(state="disabled")
