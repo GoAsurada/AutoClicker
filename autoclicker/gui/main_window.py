@@ -66,6 +66,7 @@ from autoclicker.gui.dialogs import (
 )
 from autoclicker.gui.tab_view import InstanceTabFrame
 from autoclicker.gui.scalable_tabs import ScalableTabView
+from autoclicker.gui.horizontal_tabs import HorizontalInstanceTabs
 from autoclicker.gui.font_setup import configure_app_fonts
 from autoclicker.gui.device_discovery import discover_devices
 
@@ -196,6 +197,12 @@ class App(ctk.CTk):
         self.warning_button.pack(side="right", padx=(2, 4), pady=8)
 
 
+        # Restore the original horizontal instance bar. Its viewport scrolls
+        # independently of the content, so ten or more tabs cannot force
+        # the main window wider.
+        self.instance_tabs = HorizontalInstanceTabs(self, command=self._select_instance)
+        self.instance_tabs.pack(fill="x", padx=10, pady=(0, 4))
+
         # --- Main Workspace: Tab View ---
         self.tabview = ScalableTabView(self)
         self.tabview.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -221,6 +228,7 @@ class App(ctk.CTk):
         self.warning_button.configure(
             text=f"⚠ {count}", state="normal" if count else "disabled"
         )
+        self.instance_tabs.set_warning(tab_name, is_warning)
 
     def _jump_to_warning(self):
         for tab_name in self.tab_frames:
@@ -233,6 +241,7 @@ class App(ctk.CTk):
             return
         self.tabview.set(tab_name)
         self.instance_selector.set(tab_name)
+        self.instance_tabs.set_selected(tab_name)
         self.after_idle(self.tab_frames[tab_name].ensure_templates_rendered)
 
     def get_current_tab_frame(self):
@@ -357,6 +366,7 @@ class App(ctk.CTk):
         if first_tab:
             self.tabview.set(first_tab)
             self.instance_selector.set(first_tab)
+            self.instance_tabs.set_selected(first_tab)
             self.tab_frames[first_tab].ensure_templates_rendered()
 
         if config.get("reset_counts_on_startup", False):
@@ -406,9 +416,11 @@ class App(ctk.CTk):
         frame.pack(fill="both", expand=True)
         self.tab_frames[tab_name] = frame
         self.instance_selector.configure(values=list(self.tab_frames))
+        self.instance_tabs.set_tabs(list(self.tab_frames), selected=self.tabview.get())
         if not self._initializing_tabs:
             self.tabview.set(tab_name)
             self.instance_selector.set(tab_name)
+            self.instance_tabs.set_selected(tab_name)
             self.after_idle(frame.ensure_templates_rendered)
             self.save_app_config()
         return frame
@@ -428,6 +440,7 @@ class App(ctk.CTk):
         self.instance_selector.configure(values=list(self.tab_frames))
         current = self.tabview.get()
         self.instance_selector.set(current)
+        self.instance_tabs.set_tabs(list(self.tab_frames), selected=current)
         if current in self.tab_frames:
             self.tab_frames[current].ensure_templates_rendered()
         self.save_app_config()
