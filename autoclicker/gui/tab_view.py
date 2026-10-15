@@ -931,16 +931,13 @@ class InstanceTabFrame(ctk.CTkFrame):
                 text=f"⚠️ 경고: '{filename}' 템플릿 {count}회 연속 매칭! ({self.clicker.device_address})",
                 text_color="#FF4D4D",
             )
-            try:
-                self.app_owner.tabview.set(self.tab_name)
-            except Exception:
-                pass
+            # Background warnings update the badge without stealing focus.
 
             if not self.is_alert_open:
                 self.is_alert_open = True
                 from tkinter import messagebox
                 try:
-                    messagebox.showwarning(
+                    self.app_owner.show_runtime_warning(
                         f"⚠️ 연속 매칭 경고 - [{self.tab_name}]",
                         f"⚠️ 경고 발생 탭: {self.tab_name}\n"
                         f"📱 디바이스 주소: {self.clicker.device_address}\n\n"
@@ -971,17 +968,14 @@ class InstanceTabFrame(ctk.CTkFrame):
                 text=f"⚠️ 경고: {timeout_sec}초간 매칭 미발생! ({self.clicker.device_address})",
                 text_color="#FF4D4D",
             )
-            try:
-                self.app_owner.tabview.set(self.tab_name)
-            except Exception:
-                pass
+            # Background warnings update the badge without stealing focus.
 
             if not self._alert_shown_for_current_timeout and not self.is_alert_open:
                 self._alert_shown_for_current_timeout = True
                 self.is_alert_open = True
                 from tkinter import messagebox
                 try:
-                    messagebox.showwarning(
+                    self.app_owner.show_runtime_warning(
                         f"⚠️ 타임아웃 경고 - [{self.tab_name}]",
                         f"⚠️ 경고 발생 탭: {self.tab_name}\n"
                         f"📱 디바이스 주소: {self.clicker.device_address}\n\n"
@@ -1114,6 +1108,13 @@ class InstanceTabFrame(ctk.CTkFrame):
             return
         self._shutdown_started = True
         self._loop_cancel_event.set()
+        pending_log = self._log_flush_after_id
+        self._log_flush_after_id = None
+        if pending_log is not None:
+            try:
+                self.after_cancel(pending_log)
+            except Exception:
+                pass
         self._destroyed = True
         self._connection_generation += 1
         self._loop_generation += 1
