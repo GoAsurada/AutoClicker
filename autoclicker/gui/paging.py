@@ -1,6 +1,6 @@
 """Bounded, stable pagination for large template lists."""
 
-DEFAULT_PAGE_SIZE = 50
+DEFAULT_PAGE_SIZE = 20
 
 
 def select_template_page(order, query="", page=0, page_size=DEFAULT_PAGE_SIZE):
