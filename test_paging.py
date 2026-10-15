@@ -9,10 +9,10 @@ class PaginationTests(unittest.TestCase):
     def test_large_list_never_creates_more_than_one_page(self):
         items = [f"image-{n:04d}.png" for n in range(503)]
         first, page, pages, total = select_template_page(items)
-        self.assertEqual((page, pages, total), (0, 11, 503))
+        self.assertEqual((page, pages, total), (0, 26, 503))
         self.assertEqual(len(first), DEFAULT_PAGE_SIZE)
         last, page, pages, total = select_template_page(items, page=100)
-        self.assertEqual((page, pages, total), (10, 11, 503))
+        self.assertEqual((page, pages, total), (25, 26, 503))
         self.assertEqual(len(last), 3)
         self.assertEqual(last[0], (500, "image-0500.png"))
 

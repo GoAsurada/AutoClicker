@@ -28,6 +28,7 @@ from autoclicker.core.constants import (
 from autoclicker.core.environment import get_app_dir, get_default_adb_path, resolve_adb_path
 from autoclicker.core.clicker import AutoClicker
 from autoclicker.gui.paging import DEFAULT_PAGE_SIZE, select_template_page
+from autoclicker.gui.layout_utils import shorten_middle
 from autoclicker.gui.theme import (
     COLOR_PRIMARY,
     COLOR_PRIMARY_HOVER,
@@ -118,10 +119,14 @@ class InstanceTabFrame(ctk.CTkFrame):
         self.header_frame = ctk.CTkFrame(self, fg_color=COLOR_CARD_BG, corner_radius=RADIUS_MD)
         self.header_frame.pack(fill="x", padx=10, pady=(10, 5))
         self.normal_header_fg = self.header_frame.cget("fg_color")
+        self.header_control_row = ctk.CTkFrame(self.header_frame, fg_color="transparent")
+        self.header_control_row.pack(fill="x", padx=8, pady=(5, 0))
+        self.header_status_row = ctk.CTkFrame(self.header_frame, fg_color="transparent")
+        self.header_status_row.pack(fill="x", padx=8, pady=(0, 5))
 
         # Device Address Selector
         self.device_addr_label = ctk.CTkLabel(
-            self.header_frame,
+            self.header_control_row,
             text="디바이스:",
             font=ctk.CTkFont(size=12, weight="bold")
         )
@@ -129,7 +134,7 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         initial_devices = [self.clicker.device_address]
         self.device_combo = ctk.CTkComboBox(
-            self.header_frame,
+            self.header_control_row,
             values=initial_devices,
             width=165,
             height=32,
@@ -143,7 +148,7 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         # Connect / Disconnect Button
         self.connect_button = ctk.CTkButton(
-            self.header_frame,
+            self.header_control_row,
             text="디바이스 연결",
             width=120,
             height=32,
@@ -156,7 +161,7 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         # Start / Stop Clicker Button
         self.start_button = ctk.CTkButton(
-            self.header_frame,
+            self.header_control_row,
             text="클리커 시작",
             width=120,
             height=32,
@@ -170,7 +175,7 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         # Status Label
         self.status_label = ctk.CTkLabel(
-            self.header_frame,
+            self.header_status_row,
             text="상태: 연결 안 됨",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLOR_TEXT_MUTED
@@ -179,7 +184,7 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         # Right side button in tab header: Delete Tab
         self.delete_tab_btn = ctk.CTkButton(
-            self.header_frame,
+            self.header_status_row,
             text="탭 닫기",
             width=85,
             height=32,
@@ -206,6 +211,7 @@ class InstanceTabFrame(ctk.CTkFrame):
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLOR_TEXT_MUTED
         )
+        self.no_match_timer_label.configure(wraplength=225)
         self.no_match_timer_label.pack(padx=10, pady=4)
 
         # 2. 매칭없음 경고 시간 카드
@@ -217,6 +223,7 @@ class InstanceTabFrame(ctk.CTkFrame):
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLOR_TEXT_MUTED
         )
+        self.timeout_timer_label.configure(wraplength=225)
         self.timeout_timer_label.pack(padx=10, pady=4)
 
         # 3. 최근 매칭 정보 카드
@@ -225,6 +232,7 @@ class InstanceTabFrame(ctk.CTkFrame):
         self.last_match_info_label = ctk.CTkLabel(
             self.card_last_match,
             text="🎯 최근 매칭: 대기 중",
+            wraplength=225,
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLOR_TEXT_MUTED
         )
@@ -266,7 +274,7 @@ class InstanceTabFrame(ctk.CTkFrame):
         )
         self.clear_log_btn.pack(side="right")
 
-        self.log_textbox = ctk.CTkTextbox(self.log_frame, width=350, corner_radius=RADIUS_SM)
+        self.log_textbox = ctk.CTkTextbox(self.log_frame, width=230, corner_radius=RADIUS_SM)
         self.log_textbox.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
         self.log_textbox.insert("0.0", f"Initialized Tab [{self.tab_name}] for ADB device [{self.clicker.device_address}]\n")
         self.log_textbox.configure(state="disabled")
@@ -465,9 +473,17 @@ class InstanceTabFrame(ctk.CTkFrame):
         # --- Fallback Final Action Control (Bottom Panel) ---
         self.fallback_final_frame = ctk.CTkFrame(self.tab_fallback, fg_color=COLOR_CARD_BG, corner_radius=RADIUS_MD)
         self.fallback_final_frame.pack(fill="x", padx=5, pady=(0, 5))
+        self.fb_final_header_row = ctk.CTkFrame(
+            self.fallback_final_frame, fg_color="transparent"
+        )
+        self.fb_final_header_row.pack(fill="x", padx=5, pady=(4, 0))
+        self.fb_final_action_row = ctk.CTkFrame(
+            self.fallback_final_frame, fg_color="transparent"
+        )
+        self.fb_final_action_row.pack(fill="x", padx=5, pady=(0, 4))
 
         self.fb_final_title = ctk.CTkLabel(
-            self.fallback_final_frame,
+            self.fb_final_header_row,
             text="📌 최종 탈출 동작:",
             font=ctk.CTkFont(size=12, weight="bold")
         )
@@ -483,7 +499,7 @@ class InstanceTabFrame(ctk.CTkFrame):
             NO_MATCH_ACTION_MAP["random_click"],
         ]
         self.fb_final_combo = ctk.CTkOptionMenu(
-            self.fallback_final_frame,
+            self.fb_final_header_row,
             values=final_action_options,
             width=200,
             height=30,
@@ -494,7 +510,7 @@ class InstanceTabFrame(ctk.CTkFrame):
         self.fb_final_combo.pack(side="left", padx=(0, 8), pady=8)
 
         # Coordinate inputs
-        self.fb_final_coord_frame = ctk.CTkFrame(self.fallback_final_frame, fg_color="transparent")
+        self.fb_final_coord_frame = ctk.CTkFrame(self.fb_final_action_row, fg_color="transparent")
         self.fb_final_coord_frame.pack(side="left", padx=(0, 8), pady=8)
 
         coords = getattr(self.clicker, 'fallback_final_coords', [500, 500])
@@ -530,7 +546,7 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         # Test Run Button
         self.fb_final_test_btn = ctk.CTkButton(
-            self.fallback_final_frame,
+            self.fb_final_action_row,
             text="⚡ 즉시 실행",
             width=95,
             height=30,
@@ -834,7 +850,7 @@ class InstanceTabFrame(ctk.CTkFrame):
         elif last_template and last_elapsed is not None:
             tag = " [복구]" if last_is_fallback else ""
             recent_text = (
-                f"🎯 최근 매칭: {last_template}{tag}{streak_info} "
+                f"🎯 최근 매칭: {shorten_middle(last_template, 32)}{tag}{streak_info} "
                 f"({last_elapsed:.0f}초 전)"
             )
             recent_color = "#2ECC71" if last_elapsed < 3 else "#BDC3C7"

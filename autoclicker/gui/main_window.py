@@ -65,6 +65,7 @@ from autoclicker.gui.dialogs import (
     AddInstanceWindow,
 )
 from autoclicker.gui.tab_view import InstanceTabFrame
+from autoclicker.gui.scalable_tabs import ScalableTabView
 from autoclicker.gui.font_setup import configure_app_fonts
 from autoclicker.gui.device_discovery import discover_devices
 
@@ -75,7 +76,7 @@ class App(ctk.CTk):
 
         self.title(f"Auto Clicker {VERSION}")
         self.geometry("1300x760")
-        self.minsize(1050, 600)
+        self.minsize(900, 600)
         
         self.tab_frames = {}
         self.warning_tabs = set()
@@ -97,11 +98,17 @@ class App(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # --- Top Global Control Toolbar ---
-        self.top_bar = ctk.CTkFrame(self, fg_color=COLOR_CARD_BG, corner_radius=RADIUS_MD, height=52)
+        self.top_bar = ctk.CTkFrame(self, fg_color=COLOR_CARD_BG, corner_radius=RADIUS_MD)
         self.top_bar.pack(fill="x", padx=10, pady=(10, 5))
+        # Fixed-width controls on one line forced geometry overflow on
+        # narrow and high-DPI desktops. Split them into independent rows.
+        self.nav_bar = ctk.CTkFrame(self.top_bar, fg_color="transparent")
+        self.nav_bar.pack(fill="x", padx=8, pady=(6, 0))
+        self.action_bar = ctk.CTkFrame(self.top_bar, fg_color="transparent")
+        self.action_bar.pack(fill="x", padx=8, pady=(0, 6))
 
         self.logo_label = ctk.CTkLabel(
-            self.top_bar, 
+            self.nav_bar, 
             text="⚡ Auto Clicker", 
             font=ctk.CTkFont(size=17, weight="bold")
         )
@@ -111,7 +118,7 @@ class App(ctk.CTk):
         btn_font = ctk.CTkFont(size=12, weight="bold")
 
         self.connect_all_btn = ctk.CTkButton(
-            self.top_bar,
+            self.action_bar,
             text="전체 연결",
             font=btn_font,
             width=105,
@@ -124,7 +131,7 @@ class App(ctk.CTk):
         self.connect_all_btn.pack(side="left", padx=4, pady=8)
 
         self.start_all_btn = ctk.CTkButton(
-            self.top_bar,
+            self.action_bar,
             text="전체 시작",
             font=btn_font,
             width=105,
@@ -137,7 +144,7 @@ class App(ctk.CTk):
         self.start_all_btn.pack(side="left", padx=4, pady=8)
 
         self.stop_all_btn = ctk.CTkButton(
-            self.top_bar,
+            self.action_bar,
             text="전체 중지",
             font=btn_font,
             width=105,
@@ -150,7 +157,7 @@ class App(ctk.CTk):
         self.stop_all_btn.pack(side="left", padx=4, pady=8)
 
         self.add_tab_btn = ctk.CTkButton(
-            self.top_bar,
+            self.action_bar,
             text="인스턴스 추가",
             font=btn_font,
             width=120,
@@ -164,7 +171,7 @@ class App(ctk.CTk):
 
         # Settings Button (Top-Right 최상단 우측)
         self.settings_btn = ctk.CTkButton(
-            self.top_bar,
+            self.nav_bar,
             text="설정",
             font=btn_font,
             width=80,
@@ -176,13 +183,13 @@ class App(ctk.CTk):
         )
         self.settings_btn.pack(side="right", padx=(4, 16), pady=8)
         self.instance_selector = ctk.CTkOptionMenu(
-            self.top_bar, values=["인스턴스 선택"], width=140,
+            self.nav_bar, values=["인스턴스 선택"], width=140,
             height=34, font=ctk.CTkFont(size=12),
             command=self._select_instance,
         )
         self.instance_selector.pack(side="right", padx=(4, 8), pady=8)
         self.warning_button = ctk.CTkButton(
-            self.top_bar, text="⚠ 0", width=45, height=34,
+            self.nav_bar, text="⚠ 0", width=45, height=34,
             fg_color=COLOR_WARNING, hover_color=COLOR_WARNING_HOVER,
             command=self._jump_to_warning, state="disabled",
         )
@@ -190,14 +197,8 @@ class App(ctk.CTk):
 
 
         # --- Main Workspace: Tab View ---
-        self.tabview = ctk.CTkTabview(self)
+        self.tabview = ScalableTabView(self)
         self.tabview.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        # Avoid unbounded segmented control width with many instances.
-        self.tabview._segmented_button.grid_remove()
-        try:
-            self.tabview._segmented_button.configure(font=ctk.CTkFont(size=12, weight="bold"))
-        except Exception:
-            pass
 
         # Load saved instances or create initial tab
         self.load_and_initialize_tabs()
@@ -231,7 +232,8 @@ class App(ctk.CTk):
         if tab_name not in self.tab_frames:
             return
         self.tabview.set(tab_name)
-        self.tab_frames[tab_name].ensure_templates_rendered()
+        self.instance_selector.set(tab_name)
+        self.after_idle(self.tab_frames[tab_name].ensure_templates_rendered)
 
     def get_current_tab_frame(self):
         try:
@@ -383,7 +385,7 @@ class App(ctk.CTk):
             return None
         for frame in self.tab_frames.values():
             if frame.clicker.device_address == device_address:
-                self.tabview.set(frame.tab_name)
+                self._select_instance(frame.tab_name)
                 return None
 
         self.tab_counter += 1
@@ -407,7 +409,7 @@ class App(ctk.CTk):
         if not self._initializing_tabs:
             self.tabview.set(tab_name)
             self.instance_selector.set(tab_name)
-            frame.ensure_templates_rendered()
+            self.after_idle(frame.ensure_templates_rendered)
             self.save_app_config()
         return frame
 
