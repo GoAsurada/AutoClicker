@@ -1,6 +1,5 @@
 import os
 import sys
-import queue
 import threading
 import time
 import tkinter as tk
@@ -67,6 +66,7 @@ from autoclicker.gui.dialogs import (
 from autoclicker.gui.tab_view import InstanceTabFrame
 from autoclicker.gui.scalable_tabs import ScalableTabView
 from autoclicker.gui.horizontal_tabs import HorizontalInstanceTabs
+from autoclicker.gui.ui_mailbox import UIEventMailbox
 from autoclicker.gui.font_setup import configure_app_fonts
 from autoclicker.gui.device_discovery import discover_devices
 
@@ -85,7 +85,10 @@ class App(ctk.CTk):
         self._closing = False
         self._start_all_generation = 0
         self._initializing_tabs = True
-        self._ui_queue = queue.SimpleQueue()
+        self._ui_queue = UIEventMailbox()
+        self._ui_latest_match_counts = {}
+        self._last_warning_popup_at = 0.0
+        self._warning_dialog_open = False
         self.opencv_lock = threading.Lock()
         self._ui_pump_id = self.after(50, self._drain_ui_queue)
         self._timer_pump_id = self.after(500, self._pump_timer_updates)
@@ -242,7 +245,18 @@ class App(ctk.CTk):
         self.tabview.set(tab_name)
         self.instance_selector.set(tab_name)
         self.instance_tabs.set_selected(tab_name)
+        self._set_active_log_frame(tab_name)
         self.after_idle(self.tab_frames[tab_name].ensure_templates_rendered)
+        self.after_idle(lambda: self._sync_visible_template_counts(
+            self.tab_frames[tab_name]
+        ) if tab_name in self.tab_frames else None)
+
+    def _set_active_log_frame(self, tab_name):
+        for name, frame in tuple(self.tab_frames.items()):
+            frame._log_is_visible = name == tab_name
+        active = self.tab_frames.get(tab_name)
+        if active is not None:
+            active.request_log_flush()
 
     def get_current_tab_frame(self):
         try:
@@ -286,9 +300,31 @@ class App(ctk.CTk):
             short_addr = addr_str
         return f"Inst {index} ({short_addr})"
 
-    def post_to_ui(self, callback):
+    def post_to_ui(self, callback, coalesce_key=None):
         if not self._closing:
-            self._ui_queue.put(callback)
+            self._ui_queue.put(callback, key=coalesce_key)
+
+    def ui_backlog_stats(self):
+        return self._ui_queue.stats()
+
+    def show_runtime_warning(self, title, message):
+        """Show at most one blocking warning across all emulator instances.
+
+        Other instances still show red warning indicators, but cannot create
+        a chain of modal Tk dialogs that stops the entire automation UI.
+        """
+        if self._closing or self._warning_dialog_open:
+            return False
+        now = time.monotonic()
+        if now - self._last_warning_popup_at < 30.0:
+            return False
+        self._last_warning_popup_at = now
+        self._warning_dialog_open = True
+        try:
+            messagebox.showwarning(title, message)
+        finally:
+            self._warning_dialog_open = False
+        return True
 
     def _drain_ui_queue(self):
         if self._closing:
@@ -299,7 +335,7 @@ class App(ctk.CTk):
                 break
             try:
                 callback = self._ui_queue.get_nowait()
-            except queue.Empty:
+            except IndexError:
                 break
             try:
                 callback()
@@ -367,6 +403,7 @@ class App(ctk.CTk):
             self.tabview.set(first_tab)
             self.instance_selector.set(first_tab)
             self.instance_tabs.set_selected(first_tab)
+            self._set_active_log_frame(first_tab)
             self.tab_frames[first_tab].ensure_templates_rendered()
 
         if config.get("reset_counts_on_startup", False):
@@ -421,6 +458,7 @@ class App(ctk.CTk):
             self.tabview.set(tab_name)
             self.instance_selector.set(tab_name)
             self.instance_tabs.set_selected(tab_name)
+            self._set_active_log_frame(tab_name)
             self.after_idle(frame.ensure_templates_rendered)
             self.save_app_config()
         return frame
@@ -441,6 +479,7 @@ class App(ctk.CTk):
         current = self.tabview.get()
         self.instance_selector.set(current)
         self.instance_tabs.set_tabs(list(self.tab_frames), selected=current)
+        self._set_active_log_frame(current)
         if current in self.tab_frames:
             self.tab_frames[current].ensure_templates_rendered()
         self.save_app_config()
@@ -574,15 +613,38 @@ class App(ctk.CTk):
                     label.configure(text="0회")
 
     def update_template_count_for_all(self, filename, count, is_fallback):
-        for frame in tuple(self.tab_frames.values()):
-            labels = (
-                frame.fallback_template_count_labels
-                if is_fallback
-                else frame.template_count_labels
+        # Keep compact latest state; never redraw ten hidden instances on each
+        # rapid match event. Switching tabs resynchronizes visible counters.
+        key = (filename, bool(is_fallback))
+        self._ui_latest_match_counts[key] = count
+        frame = self.get_current_tab_frame()
+        if frame is None or frame._destroyed:
+            return
+        labels = (
+            frame.fallback_template_count_labels
+            if is_fallback else frame.template_count_labels
+        )
+        label = labels.get(filename)
+        if label is not None and label.winfo_exists():
+            label.configure(text=f"{count}회")
+
+    def _sync_visible_template_counts(self, frame):
+        for is_fallback, labels in (
+            (False, frame.template_count_labels),
+            (True, frame.fallback_template_count_labels),
+        ):
+            counts = (
+                frame.clicker.fallback_template_counts
+                if is_fallback else frame.clicker.template_counts
             )
-            label = labels.get(filename)
-            if label is not None and label.winfo_exists():
-                label.configure(text=f"{count}회")
+            for filename, label in tuple(labels.items()):
+                if label is not None and label.winfo_exists():
+                    current = self._ui_latest_match_counts.get(
+                        (filename, is_fallback), counts.get(filename, 0)
+                    )
+                    text = f"{current}회"
+                    if label.cget("text") != text:
+                        label.configure(text=text)
 
     def start_all_clickers(self):
         self._start_all_generation += 1
