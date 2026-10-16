@@ -1418,6 +1418,16 @@ class InstanceTabFrame(ctk.CTkFrame):
                 "지연 시간 설정 (Set Delay)",
                 lambda f=filename, fb=is_fallback: (self.set_fallback_template_delay_event(f) if fb else self.set_template_delay_event(f)),
             )
+            # Pagination prevents dragging across page boundaries. Keep full
+            # ordering functionality available from each row's context menu.
+            menu.add_command(
+                "우선순위 한 칸 올리기 (Move Up)",
+                lambda f=filename, fb=is_fallback: self.move_template(f, -1, fb),
+            )
+            menu.add_command(
+                "우선순위 한 칸 내리기 (Move Down)",
+                lambda f=filename, fb=is_fallback: self.move_template(f, 1, fb),
+            )
             menu.add_separator()
             menu.add_command(
                 "템플릿 삭제 (Delete)",
@@ -1510,6 +1520,9 @@ class InstanceTabFrame(ctk.CTkFrame):
         if 0 <= new_idx < len(order):
             item = order.pop(idx)
             order.insert(new_idx, item)
+            # Keep a moved row visible when crossing a pagination boundary.
+            if isinstance(getattr(self, "_template_pages", None), dict):
+                self._template_pages[bool(is_fallback)] = new_idx // DEFAULT_PAGE_SIZE
             self.clicker.save_config()
             self.app_owner.update_all_template_order(order, is_fallback=is_fallback)
 
@@ -1607,11 +1620,9 @@ class InstanceTabFrame(ctk.CTkFrame):
         TemplateDelayWindow(self, filename, is_fallback=True)
 
     def reset_counts_event(self):
-        self.clicker.reset_counts()
         self.app_owner.reset_all_template_counts(is_fallback=False)
 
     def reset_fallback_counts_event(self):
-        self.clicker.reset_fallback_counts()
         self.app_owner.reset_all_template_counts(is_fallback=True)
 
     def delete_template_event(self, filename):
