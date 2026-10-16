@@ -71,13 +71,27 @@ class AddInstanceWindow(ctk.CTkToplevel):
         self.dev_title = ctk.CTkLabel(self.dev_frame, text="📱 검색된 ADB 디바이스 목록 (선택):", font=ctk.CTkFont(weight="bold"))
         self.dev_title.pack(anchor="w", padx=15, pady=(10, 5))
 
+        # Pack the controls *before* the scrollable frame is created.
+        # CTkScrollableFrame packs an internal canvas, not itself: using
+        # pack(before=self.scroll_frame) raises a TclError on opening.
+        self.scan_controls = ctk.CTkFrame(self.dev_frame, fg_color="transparent")
+        self.scan_controls.pack(fill="x", padx=10, pady=(0, 5))
+        self.refresh_btn = ctk.CTkButton(
+            self.scan_controls, text="↻ 연결 목록 갱신", width=135,
+            command=lambda: self.start_device_scan(scan_ports=False),
+        )
+        self.refresh_btn.pack(side="left", padx=(0, 6))
+        self.port_scan_btn = ctk.CTkButton(
+            self.scan_controls, text="🔎 전체 포트 탐색", width=135,
+            fg_color=COLOR_NEUTRAL, hover_color=COLOR_NEUTRAL_HOVER,
+            command=lambda: self.start_device_scan(scan_ports=True),
+        )
+        self.port_scan_btn.pack(side="left")
+
         self.scroll_frame = ctk.CTkScrollableFrame(self.dev_frame, height=200)
         self.scroll_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
         self.checkbox_vars = {} # dev_addr -> BooleanVar
-
-        self.loading_label = ctk.CTkLabel(self.scroll_frame, text="디바이스 검색 중 (ADB scanning)...", text_color=COLOR_TEXT_MUTED)
-        self.loading_label.pack(pady=20)
 
         # 수동 주소 입력 영역
         self.custom_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -115,21 +129,8 @@ class AddInstanceWindow(ctk.CTkToplevel):
         )
         self.add_and_connect_btn.pack(side="right", fill="x", expand=True, padx=(5, 0))
 
-        # A plain refresh reads 'adb devices' only. Broad port probing requires
-        # a separate, explicit user click to avoid touching unrelated services.
-        self.scan_controls = ctk.CTkFrame(self.dev_frame, fg_color="transparent")
-        self.scan_controls.pack(fill="x", padx=10, pady=(0, 5), before=self.scroll_frame)
-        self.refresh_btn = ctk.CTkButton(
-            self.scan_controls, text="↻ 연결 목록 갱신", width=135,
-            command=lambda: self.start_device_scan(scan_ports=False),
-        )
-        self.refresh_btn.pack(side="left", padx=(0, 6))
-        self.port_scan_btn = ctk.CTkButton(
-            self.scan_controls, text="🔎 전체 포트 탐색", width=135,
-            fg_color=COLOR_NEUTRAL, hover_color=COLOR_NEUTRAL_HOVER,
-            command=lambda: self.start_device_scan(scan_ports=True),
-        )
-        self.port_scan_btn.pack(side="left")
+        # Query already-connected devices by default. Exhaustive port probing
+        # remains behind the separate explicit button above.
         self._scan_busy = False
         self.start_device_scan()
 
@@ -140,6 +141,8 @@ class AddInstanceWindow(ctk.CTkToplevel):
         self._scan_busy = True
         self.refresh_btn.configure(state="disabled")
         self.port_scan_btn.configure(state="disabled")
+        if hasattr(self, "loading_label") and self.loading_label.winfo_exists():
+            self.loading_label.destroy()
         self.loading_label = ctk.CTkLabel(
             self.scroll_frame,
             text=("ADB 전체 포트 검색 중..." if scan_ports else "연결된 ADB 장치 확인 중..."),
