@@ -40,6 +40,8 @@ class ScalableWindowTests(unittest.TestCase):
             container.delete(container.get())
             self.assertEqual(len(container._tabs), 11)
         finally:
+            for after_id in root.tk.call("after", "info"):
+                root.tk.call("after", "cancel", after_id)
             root.destroy()
 
     def test_real_app_layout_with_ten_instances_and_fifty_eight_templates(self):
