@@ -45,6 +45,8 @@ class HorizontalInstanceTabTests(unittest.TestCase):
             self.assertNotIn(names[13], tabs._buttons)
             self.assertLess(tabs.winfo_reqwidth(), 800)
         finally:
+            for after_id in root.tk.call("after", "info"):
+                root.tk.call("after", "cancel", after_id)
             root.destroy()
 
 

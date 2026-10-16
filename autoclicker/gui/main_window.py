@@ -1,5 +1,6 @@
 import os
 import sys
+from collections import deque
 import threading
 import time
 import tkinter as tk
@@ -86,6 +87,8 @@ class App(ctk.CTk):
         self._start_all_generation = 0
         self._initializing_tabs = True
         self._ui_queue = UIEventMailbox()
+        self._ui_error_total = 0
+        self._ui_recent_errors = deque(maxlen=20)
         self._ui_latest_match_counts = {}
         self._last_warning_popup_at = 0.0
         self._warning_dialog_open = False
@@ -216,6 +219,7 @@ class App(ctk.CTk):
         # Keyboard shortcuts
         self.bind("<Control-f>", self.on_ctrl_f)
         self.bind("<Control-F>", self.on_ctrl_f)
+        self.bind("<Control-Shift-D>", self.show_runtime_diagnostics)
 
         # Auto refresh devices after short delay
         self.after(500, self.refresh_all_devices)
@@ -305,7 +309,27 @@ class App(ctk.CTk):
             self._ui_queue.put(callback, key=coalesce_key)
 
     def ui_backlog_stats(self):
-        return self._ui_queue.stats()
+        info = self._ui_queue.stats()
+        info["ui_callback_errors"] = self._ui_error_total
+        info["latest_callback_error"] = (
+            self._ui_recent_errors[-1] if self._ui_recent_errors else None
+        )
+        return info
+
+    def show_runtime_diagnostics(self, event=None):
+        """Inspect queue pressure and UI errors without writing disk logs."""
+        stats = self.ui_backlog_stats()
+        tail = "\n".join(list(self._ui_recent_errors)[-5:]) or "없음"
+        messagebox.showinfo(
+            "AutoClicker UI 진단",
+            f"인스턴스: {len(self.tab_frames)}개\n"
+            f"UI 대기 작업: {stats['pending']}개\n"
+            f"최고 대기 작업: {stats['peak_pending']}개\n"
+            f"중복 이벤트 통합: {stats['coalesced_replacements']}건\n"
+            f"UI 콜백 오류: {stats['ui_callback_errors']}건\n\n"
+            f"최근 오류:\n{tail}",
+            parent=self,
+        )
 
     def show_runtime_warning(self, title, message):
         """Show at most one blocking warning across all emulator instances.
@@ -339,8 +363,11 @@ class App(ctk.CTk):
                 break
             try:
                 callback()
-            except Exception:
-                pass
+            except Exception as error:
+                self._ui_error_total += 1
+                self._ui_recent_errors.append(
+                    f"{type(error).__name__}: {error}"[:350]
+                )
         self._ui_pump_id = self.after(50, self._drain_ui_queue)
 
     def _pump_timer_updates(self):
@@ -540,6 +567,9 @@ class App(ctk.CTk):
             frame.filter_templates(is_fallback=is_fallback)
 
     def remove_template_from_all_tabs(self, filename, is_fallback=False):
+        # A deleted template must not retain its old display count if another
+        # file is later created with the same name.
+        self._ui_latest_match_counts.pop((filename, bool(is_fallback)), None)
         for frame in tuple(self.tab_frames.values()):
             if is_fallback:
                 order = frame.clicker.fallback_template_order
@@ -576,6 +606,15 @@ class App(ctk.CTk):
             frame.filter_templates(is_fallback=is_fallback)
 
     def add_template_to_all_tabs(self, filename, offset_x=0, offset_y=0, is_fallback=False):
+        existed = any(
+            filename in (
+                frame.clicker.fallback_template_order if is_fallback
+                else frame.clicker.template_order
+            )
+            for frame in self.tab_frames.values()
+        )
+        if not existed:
+            self._ui_latest_match_counts.pop((filename, bool(is_fallback)), None)
         for frame in tuple(self.tab_frames.values()):
             if is_fallback:
                 order = frame.clicker.fallback_template_order
@@ -601,15 +640,48 @@ class App(ctk.CTk):
                 frame.filter_templates(is_fallback=is_fallback)
 
     def reset_all_template_counts(self, is_fallback=False):
-        for frame in tuple(self.tab_frames.values()):
-            if is_fallback:
-                frame.clicker.reset_fallback_counts()
-                count_dict = frame.fallback_template_count_labels
-            else:
-                frame.clicker.reset_counts()
-                count_dict = frame.template_count_labels
-            for label in count_dict.values():
-                if label and label.winfo_exists():
+        """Reset shared persisted counts once, then sync every instance UI.
+
+        All instances use the same config path. Repeating the reset on every
+        clicker creates redundant writes and can race with pending count saves.
+        """
+        if not self.tab_frames:
+            return
+        frames = tuple(self.tab_frames.values())
+        source = frames[0].clicker
+        if is_fallback:
+            source.reset_fallback_counts()
+        else:
+            source.reset_counts()
+
+        # An older UI match callback must never resurrect pre-reset counters.
+        for key in tuple(self._ui_latest_match_counts):
+            if bool(key[1]) == bool(is_fallback):
+                del self._ui_latest_match_counts[key]
+
+        for frame in frames:
+            # Drop pre-reset match notifications that are still waiting for
+            # the UI event pump. They must not restore stale counter values.
+            match_lock = getattr(frame, "_match_ui_lock", None)
+            pending_matches = getattr(frame, "_pending_match_counts", None)
+            if match_lock is not None and pending_matches is not None:
+                with match_lock:
+                    for pending_key in tuple(pending_matches):
+                        if bool(pending_key[1]) == bool(is_fallback):
+                            pending_matches.pop(pending_key, None)
+            counts = (
+                frame.clicker.fallback_template_counts if is_fallback
+                else frame.clicker.template_counts
+            )
+            if frame.clicker is not source:
+                for filename in tuple(counts):
+                    counts[filename] = 0
+            labels = (
+                frame.fallback_template_count_labels if is_fallback
+                else frame.template_count_labels
+            )
+            for label in labels.values():
+                if label is not None and label.winfo_exists():
                     label.configure(text="0회")
 
     def update_template_count_for_all(self, filename, count, is_fallback):
@@ -757,6 +829,22 @@ class App(ctk.CTk):
         except Exception:
             pass
         self.destroy()
+
+    def destroy(self):
+        """Cancel queued Tk jobs before tearing down the widget tree.
+
+        CustomTkinter scrollbars and root timers register Tcl callbacks. If
+        destroyed widgets leave them queued, the next Tk event pump reports
+        invalid-command errors and may keep references to stale UI objects.
+        """
+        self._closing = True
+        try:
+            for after_id in self.tk.call("after", "info"):
+                self.tk.call("after", "cancel", after_id)
+        except tk.TclError:
+            pass
+        self._ui_queue.clear()
+        super().destroy()
 
 
 # Backward compatibility aliases
