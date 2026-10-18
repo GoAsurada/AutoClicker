@@ -17,10 +17,12 @@ def compact_instance_label(name, slot_width, warning=False):
     """Shorten only the caption, never the identity used to select a tab."""
     match = re.match(r"Inst\s+(\d+)\b", name)
     short = match.group(1) if match else name.split(" (", 1)[0]
+    port = re.search(r":(\d+)\)?$", name)
+    # Reclaim room without deleting the useful original port numbers.
     if slot_width >= 110:
-        caption = f"Inst {short}"
+        caption = f"Inst {short} :{port.group(1)}" if port else f"Inst {short}"
     elif slot_width >= 65:
-        caption = f"#{short}"
+        caption = f"Inst {short}"
     else:
         caption = short[:4]
     return f"⚠ {caption}" if warning else caption
@@ -35,7 +37,7 @@ class HorizontalInstanceTabs(ctk.CTkFrame):
         self._buttons = {}
         self._selected = None
         self._warnings = set()
-        self._font = ctk.CTkFont(size=12, weight="bold")
+        self._font = ctk.CTkFont(size=13, weight="bold")
         self._last_slot = None
         self.bind("<Configure>", self._on_resize)
 
