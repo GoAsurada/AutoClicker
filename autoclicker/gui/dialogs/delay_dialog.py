@@ -82,14 +82,14 @@ class TemplateDelayWindow(ctk.CTkToplevel):
         self.header_label = ctk.CTkLabel(
             self,
             text=f"⏱️ [{target_name}] 동작 지연 시간 설정",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            font=ctk.CTkFont(size=15, weight="bold"),
         )
         self.header_label.pack(pady=(15, 2))
 
         self.filename_label = ctk.CTkLabel(
             self,
             text=f"대상: {filename}",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=12),
             text_color=COLOR_TEXT_MUTED,
         )
         self.filename_label.pack(pady=(0, 10))
@@ -119,7 +119,7 @@ class TemplateDelayWindow(ctk.CTkToplevel):
         self.desc_label = ctk.CTkLabel(
             self.desc_frame,
             text="",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=12),
             text_color=COLOR_TEXT_MUTED,
             justify="left",
             wraplength=370,
