@@ -360,6 +360,14 @@ class InstanceTabFrame(ctk.CTkFrame):
             command=lambda: self.clear_search(is_fallback=False)
         )
         self.primary_clear_search_btn.pack(side="right")
+        self.primary_order_btn = ctk.CTkButton(
+            self.primary_search_frame,
+            text="☰ 전체 순서 정렬",
+            width=118, height=28,
+            fg_color=COLOR_NEUTRAL, hover_color=COLOR_NEUTRAL_HOVER,
+            command=lambda: self.open_template_order_editor(False),
+        )
+        self.primary_order_btn.pack(side="right", padx=(0, 5))
 
         self.primary_no_match_label = None
 
@@ -453,6 +461,14 @@ class InstanceTabFrame(ctk.CTkFrame):
             command=lambda: self.clear_search(is_fallback=True)
         )
         self.fallback_clear_search_btn.pack(side="right")
+        self.fallback_order_btn = ctk.CTkButton(
+            self.fallback_search_frame,
+            text="☰ 전체 순서 정렬",
+            width=118, height=28,
+            fg_color=COLOR_NEUTRAL, hover_color=COLOR_NEUTRAL_HOVER,
+            command=lambda: self.open_template_order_editor(True),
+        )
+        self.fallback_order_btn.pack(side="right", padx=(0, 5))
 
         self.fb_no_match_label = None
 
@@ -1509,6 +1525,12 @@ class InstanceTabFrame(ctk.CTkFrame):
             self.clicker.execute_template(filename, is_fallback=is_fallback)
 
         self._start_action_worker(task)
+
+    def open_template_order_editor(self, is_fallback=False):
+        from autoclicker.gui.template_order_editor import TemplateOrderEditor
+        if self._destroyed:
+            return None
+        return TemplateOrderEditor(self, is_fallback=is_fallback)
 
     def move_template(self, filename, direction, is_fallback=False):
         TemplatePreviewTooltip.get_instance(self.winfo_toplevel()).hide()
