@@ -13,6 +13,7 @@ import customtkinter as ctk
 FONT_FAMILY = "Pretendard"
 FALLBACK_FAMILY = "Malgun Gothic"
 _private_font_files = []
+_theme_size_adjusted = False
 
 
 def configure_app_fonts(root):
@@ -44,13 +45,25 @@ def configure_app_fonts(root):
     except Exception:
         installed = set()
     family = FONT_FAMILY if FONT_FAMILY in installed or _private_font_files else FALLBACK_FAMILY
-    ctk.ThemeManager.theme.setdefault("CTkFont", {})["family"] = family
+    global _theme_size_adjusted
+    font_theme = ctk.ThemeManager.theme.setdefault("CTkFont", {})
+    font_theme["family"] = family
+    # A single process-wide +1pt adjustment; constructing multiple App
+    # windows must not repeatedly inflate the default font.
+    if not _theme_size_adjusted:
+        font_theme["size"] = int(font_theme.get("size", 13)) + 1
+        _theme_size_adjusted = True
     for font_name in (
         "TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont",
         "TkCaptionFont", "TkSmallCaptionFont",
     ):
         try:
-            tkfont.nametofont(font_name, root=root).configure(family=family)
+            named = tkfont.nametofont(font_name, root=root)
+            existing_size = int(named.cget("size"))
+            named.configure(
+                family=family,
+                size=existing_size + 1 if existing_size >= 0 else existing_size - 1,
+            )
         except Exception:
             pass
     return family
