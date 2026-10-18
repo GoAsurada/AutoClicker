@@ -1,9 +1,9 @@
-"""Scrollable horizontal instance tabs; independent from the content pages.
+"""One-row instance navigation that fits all tabs without horizontal scrolling.
 
-The original instance tab bar remains available regardless of the number of
-emulators. Only the navigation buttons are horizontally scrollable; they can
-never expand the application's root geometry.
+The complete address remains available in the existing instance selector.
+Tab buttons display compact instance numbers at narrower viewport widths.
 """
+import re
 
 import customtkinter as ctk
 
@@ -13,8 +13,21 @@ from autoclicker.gui.theme import (
 )
 
 
+def compact_instance_label(name, slot_width, warning=False):
+    """Shorten only the caption, never the identity used to select a tab."""
+    match = re.match(r"Inst\s+(\d+)\b", name)
+    short = match.group(1) if match else name.split(" (", 1)[0]
+    if slot_width >= 110:
+        caption = f"Inst {short}"
+    elif slot_width >= 65:
+        caption = f"#{short}"
+    else:
+        caption = short[:4]
+    return f"⚠ {caption}" if warning else caption
+
+
 class HorizontalInstanceTabs(ctk.CTkFrame):
-    """Always-visible one-row instance navigation with a horizontal scrollbar."""
+    """Grid-weighted buttons: all configured instances in exactly one row."""
 
     def __init__(self, master, command):
         super().__init__(master, fg_color="transparent", corner_radius=0)
@@ -23,56 +36,59 @@ class HorizontalInstanceTabs(ctk.CTkFrame):
         self._selected = None
         self._warnings = set()
         self._font = ctk.CTkFont(size=12, weight="bold")
-
-        # Built-in horizontal canvas scrolling prevents layout-width growth.
-        self.scroll = ctk.CTkScrollableFrame(
-            self,
-            orientation="horizontal",
-            height=40,
-            fg_color="transparent",
-        )
-        self.scroll.pack(fill="x", expand=True)
+        self._last_slot = None
+        self.bind("<Configure>", self._on_resize)
 
     @property
     def names(self):
         return tuple(self._buttons)
 
+    def _on_resize(self, event=None):
+        # Tk fires frequent Configure notifications while a window is dragged.
+        # Only the three caption-width tiers affect the layout.
+        if not self._buttons:
+            return
+        width = event.width if event is not None else self.winfo_width()
+        slot = max(1, (width - 4 * len(self._buttons)) // len(self._buttons))
+        tier = 2 if slot >= 110 else (1 if slot >= 65 else 0)
+        if tier != self._last_slot:
+            self._last_slot = tier
+            self._render()
+
     def set_tabs(self, names, selected=None):
         names = list(dict.fromkeys(names))
-        live = set(names)
-        for name in tuple(self._buttons):
-            if name not in live:
+        old_names = tuple(self._buttons)
+        for name in old_names:
+            if name not in names:
                 self._buttons.pop(name).destroy()
                 self._warnings.discard(name)
+        for i in range(len(old_names)):
+            self.grid_columnconfigure(i, weight=0, minsize=0)
         for name in names:
             if name not in self._buttons:
                 self._buttons[name] = ctk.CTkButton(
-                    self.scroll,
-                    text=name,
-                    width=158,
-                    height=32,
-                    corner_radius=5,
+                    self, text="", width=1, height=34, corner_radius=5,
                     font=self._font,
                     command=lambda value=name: self._command(value),
                 )
-            # Updating button order never rebuilds pages or touches ADB.
-            self._buttons[name].pack_forget()
-            self._buttons[name].pack(side="left", padx=(0, 5), pady=3)
-
+            self._buttons[name].grid_forget()
         self._buttons = {name: self._buttons[name] for name in names}
-        if selected is not None:
-            self.set_selected(selected)
+        for index, name in enumerate(names):
+            self.grid_columnconfigure(index, weight=1, uniform="instance", minsize=0)
+            self._buttons[name].grid(
+                row=0, column=index, sticky="ew", padx=2, pady=3
+            )
+        if selected in self._buttons:
+            self._selected = selected
         elif self._selected not in self._buttons:
-            self._selected = None
+            self._selected = names[0] if names else None
+        self._last_slot = None
         self._render()
 
     def set_selected(self, name):
-        if name not in self._buttons:
-            return
-        if self._selected != name:
+        if name in self._buttons:
             self._selected = name
             self._render()
-        self.after_idle(self._scroll_selected_into_view)
 
     def set_warning(self, name, warning):
         if warning:
@@ -87,39 +103,26 @@ class HorizontalInstanceTabs(ctk.CTkFrame):
             self._style_button(name)
 
     def _style_button(self, name):
-        is_active = name == self._selected
+        count = max(1, len(self._buttons))
+        available = self.winfo_width()
+        if available < 100:
+            available = max(200, self.winfo_toplevel().winfo_width() - 20)
+        slot_width = max(1, (available - 4 * count) // count)
+        active = name == self._selected
         warning = name in self._warnings
-        fg = COLOR_PRIMARY if is_active else (COLOR_DANGER if warning else COLOR_NEUTRAL)
-        hover = COLOR_PRIMARY_HOVER if is_active else (
+        fg = COLOR_PRIMARY if active else (COLOR_DANGER if warning else COLOR_NEUTRAL)
+        hover = COLOR_PRIMARY_HOVER if active else (
             COLOR_DANGER_HOVER if warning else COLOR_NEUTRAL_HOVER
         )
-        self._buttons[name].configure(
-            fg_color=fg,
-            hover_color=hover,
+        caption = compact_instance_label(name, slot_width, warning)
+        button = self._buttons[name]
+        desired = (caption, fg, hover, active)
+        if getattr(button, "_instance_style_cache", None) == desired:
+            return
+        button._instance_style_cache = desired
+        button.configure(
+            text=caption, fg_color=fg, hover_color=hover,
             text_color=COLOR_TEXT_PRIMARY,
-            border_width=2 if is_active else 0,
-            border_color=COLOR_TEXT_PRIMARY if is_active else fg,
+            border_width=2 if active else 0,
+            border_color=COLOR_TEXT_PRIMARY if active else fg,
         )
-
-    def _scroll_selected_into_view(self):
-        if not self.winfo_exists() or self._selected not in self._buttons:
-            return
-        canvas = getattr(self.scroll, "_parent_canvas", None)
-        if canvas is None or not canvas.winfo_exists():
-            return
-        button = self._buttons[self._selected]
-        if not button.winfo_exists():
-            return
-        self.update_idletasks()
-        visible_start = canvas.canvasx(0)
-        visible_end = visible_start + canvas.winfo_width()
-        left = button.winfo_x()
-        right = left + button.winfo_width()
-        if left >= visible_start and right <= visible_end:
-            return
-        region = canvas.bbox("all")
-        if not region:
-            return
-        total = max(region[2] - region[0], 1)
-        target = left if left < visible_start else right - canvas.winfo_width()
-        canvas.xview_moveto(max(0.0, min(1.0, (target - region[0]) / total)))
