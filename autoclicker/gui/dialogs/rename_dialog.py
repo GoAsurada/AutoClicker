@@ -66,14 +66,14 @@ class RenameTemplateWindow(ctk.CTkToplevel):
         self.header_label = ctk.CTkLabel(
             self,
             text=f"✏️ [{target_type}] 템플릿 이름 변경",
-            font=ctk.CTkFont(size=14, weight="bold")
+            font=ctk.CTkFont(size=15, weight="bold")
         )
         self.header_label.pack(pady=(15, 4))
 
         self.info_label = ctk.CTkLabel(
             self,
             text=f"현재 이름: {filename}",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=12),
             text_color="gray"
         )
         self.info_label.pack(pady=(0, 8))
