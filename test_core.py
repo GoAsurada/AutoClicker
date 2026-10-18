@@ -2843,15 +2843,15 @@ class AutoClickerCoreTests(unittest.TestCase):
             "BgTab": bg_frame,
         }
 
-        # 1. First pump: Active tab updates display, BgTab does warning check + initial update
+        # 1. Active tab renders; hidden tabs only check warning indicators.
         with patch("time.monotonic", return_value=100.0):
             App._pump_timer_updates(mock_app)
             active_frame.update_timer_display.assert_called_once()
             bg_frame.check_tab_warning_status.assert_called_once()
-            bg_frame.update_timer_display.assert_called_once()
+            bg_frame.update_timer_display.assert_not_called()
 
-        # 2. Second pump within 2.5s (at 101.0s):
-        # Active tab updates display, BgTab only runs warning check (display throttled)
+        # 2. Second pump at 101.0s:
+        # Active tab updates display; hidden tab avoids unused timer renders.
         active_frame.update_timer_display.reset_mock()
         bg_frame.check_tab_warning_status.reset_mock()
         bg_frame.update_timer_display.reset_mock()
@@ -2863,7 +2863,7 @@ class AutoClickerCoreTests(unittest.TestCase):
             bg_frame.update_timer_display.assert_not_called()
 
         # 3. Third pump after 2.5s (at 102.6s):
-        # BgTab display is updated again
+        # Background tab still must not repaint while hidden.
         active_frame.update_timer_display.reset_mock()
         bg_frame.check_tab_warning_status.reset_mock()
         bg_frame.update_timer_display.reset_mock()
@@ -2872,7 +2872,7 @@ class AutoClickerCoreTests(unittest.TestCase):
             App._pump_timer_updates(mock_app)
             active_frame.update_timer_display.assert_called_once()
             bg_frame.check_tab_warning_status.assert_called_once()
-            bg_frame.update_timer_display.assert_called_once()
+            bg_frame.update_timer_display.assert_not_called()
 
     def test_resolve_adb_path_bundled_and_custom(self):
         default_path = get_default_adb_path(self.temp_dir)
