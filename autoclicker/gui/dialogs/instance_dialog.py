@@ -61,7 +61,7 @@ class AddInstanceWindow(ctk.CTkToplevel):
         self.transient(parent_app)
         self.grab_set()
 
-        self.header_label = ctk.CTkLabel(self, text="➕ 새 인스턴스 탭 추가", font=ctk.CTkFont(size=16, weight="bold"))
+        self.header_label = ctk.CTkLabel(self, text="➕ 새 인스턴스 탭 추가", font=ctk.CTkFont(size=17, weight="bold"))
         self.header_label.pack(pady=(15, 10))
 
         # 검색된 디바이스 영역
