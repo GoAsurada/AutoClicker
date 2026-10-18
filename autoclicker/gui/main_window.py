@@ -92,6 +92,7 @@ class App(ctk.CTk):
         self._ui_latest_match_counts = {}
         self._last_warning_popup_at = 0.0
         self._warning_dialog_open = False
+        self._disconnect_all_busy = False
         self.opencv_lock = threading.Lock()
         self._ui_pump_id = self.after(50, self._drain_ui_queue)
         self._timer_pump_id = self.after(500, self._pump_timer_updates)
@@ -136,6 +137,19 @@ class App(ctk.CTk):
             command=self.connect_all_instances
         )
         self.connect_all_btn.pack(side="left", padx=4, pady=8)
+
+        self.disconnect_all_btn = ctk.CTkButton(
+            self.action_bar,
+            text="전체 연결 끊기",
+            font=btn_font,
+            width=122,
+            height=34,
+            fg_color=COLOR_NEUTRAL,
+            hover_color=COLOR_NEUTRAL_HOVER,
+            corner_radius=RADIUS_MD,
+            command=self.disconnect_all_instances,
+        )
+        self.disconnect_all_btn.pack(side="left", padx=4, pady=8)
 
         self.start_all_btn = ctk.CTkButton(
             self.action_bar,
@@ -251,6 +265,7 @@ class App(ctk.CTk):
         self.instance_tabs.set_selected(tab_name)
         self._set_active_log_frame(tab_name)
         self.after_idle(self.tab_frames[tab_name].ensure_templates_rendered)
+        self.after_idle(self.tab_frames[tab_name].update_timer_display)
         self.after_idle(lambda: self._sync_visible_template_counts(
             self.tab_frames[tab_name]
         ) if tab_name in self.tab_frames else None)
@@ -378,7 +393,6 @@ class App(ctk.CTk):
         except Exception:
             current_tab = None
 
-        now = time.monotonic()
         if current_tab in self.tab_frames:
             self.tab_frames[current_tab].ensure_templates_rendered()
             if self.instance_selector.get() != current_tab:
@@ -388,15 +402,9 @@ class App(ctk.CTk):
                 if name == current_tab:
                     frame.update_timer_display()
                 else:
-                    # Lightweight warning status check every 500ms
+                    # Hidden timer labels are not visible. Track alert badges,
+                    # but do not render/update ten background widget trees.
                     frame.check_tab_warning_status()
-                    # Throttle background tab UI text updates to every 2.5 seconds
-                    last_update = getattr(frame, "_last_bg_timer_update", 0.0)
-                    if not isinstance(last_update, (int, float)):
-                        last_update = 0.0
-                    if now - last_update >= 2.5:
-                        frame._last_bg_timer_update = now
-                        frame.update_timer_display()
             except Exception:
                 pass
         self._timer_pump_id = self.after(500, self._pump_timer_updates)
@@ -550,6 +558,7 @@ class App(ctk.CTk):
                 )
 
     def update_all_template_order(self, order, is_fallback=False):
+        active = self.tabview.get()
         for frame in tuple(self.tab_frames.values()):
             if is_fallback:
                 frame.clicker.fallback_template_order = list(order)
@@ -557,6 +566,11 @@ class App(ctk.CTk):
             else:
                 frame.clicker.template_order = list(order)
                 row_dict = frame.template_row_widgets
+            if frame.tab_name != active:
+                # Preserve the global order in memory, but postpone 10+
+                # hidden pages' widget re-creation until selection.
+                frame._templates_rendered = False
+                continue
             for w in row_dict.values():
                 w.frame.pack_forget()
             for idx, filename in enumerate(order):
@@ -747,6 +761,59 @@ class App(ctk.CTk):
         for frame in self.tab_frames.values():
             if frame.clicker.device is None:
                 frame.toggle_connection()
+
+    def disconnect_all_instances(self):
+        """Disconnect every instance without waiting on ADB from Tk's thread.
+
+        Stop/cancel automation first and invalidate any in-flight connection
+        callbacks. Actual ADB disconnects can block; process them in a worker
+        while Tk remains responsive. Keep all saved addresses and templates.
+        """
+        if self._closing or self._disconnect_all_busy:
+            return
+        self._disconnect_all_busy = True
+        self.disconnect_all_btn.configure(state="disabled", text="연결 해제 중…")
+        self.connect_all_btn.configure(state="disabled")
+        self.start_all_btn.configure(state="disabled")
+        self._start_all_generation += 1
+        frames = tuple(self.tab_frames.values())
+        for frame in frames:
+            frame._connection_generation += 1
+            frame.connect_button.configure(state="disabled", text="연결 해제 중…")
+            if frame.clicker.is_running or frame._loop_starting:
+                frame.stop_clicker_loop()
+
+        def worker():
+            try:
+                for frame in frames:
+                    if self._closing or frame._destroyed:
+                        continue
+                    try:
+                        frame.clicker.disconnect()
+                        error = None
+                    except Exception as exc:
+                        error = f"{type(exc).__name__}: {exc}"
+                    def apply(target=frame, failure=error):
+                        if self._closing or target._destroyed:
+                            return
+                        target._set_disconnected_ui()
+                        target.clear_warning_ui()
+                        if failure:
+                            target.log_message(f"연결 해제 오류: {failure}")
+                    self.post_to_ui(apply)
+            finally:
+                def finished():
+                    if self._closing:
+                        return
+                    self._disconnect_all_busy = False
+                    self.disconnect_all_btn.configure(
+                        state="normal", text="전체 연결 끊기"
+                    )
+                    self.connect_all_btn.configure(state="normal")
+                    self.start_all_btn.configure(state="normal")
+                self.post_to_ui(finished)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def refresh_all_devices(self):
         def task():
