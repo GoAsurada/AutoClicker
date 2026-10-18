@@ -61,19 +61,19 @@ class LicenseNoticeWindow(ctk.CTkToplevel):
         self.header_label = ctk.CTkLabel(
             self,
             text="📜 오픈소스 소프트웨어 라이선스 고지",
-            font=ctk.CTkFont(size=15, weight="bold")
+            font=ctk.CTkFont(size=16, weight="bold")
         )
         self.header_label.pack(padx=20, pady=(15, 5))
 
         self.sub_label = ctk.CTkLabel(
             self,
             text="본 프로그램은 아래 오픈소스 컴포넌트를 번들링하거나 활용하고 있습니다.",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=12),
             text_color=COLOR_TEXT_MUTED
         )
         self.sub_label.pack(padx=20, pady=(0, 10))
 
-        self.textbox = ctk.CTkTextbox(self, corner_radius=RADIUS_SM, font=ctk.CTkFont(size=11))
+        self.textbox = ctk.CTkTextbox(self, corner_radius=RADIUS_SM, font=ctk.CTkFont(size=12))
         self.textbox.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
         license_text = (
