@@ -109,7 +109,7 @@ class App(ctk.CTk):
 
         # --- Top Global Control Toolbar ---
         self.top_bar = ctk.CTkFrame(self, fg_color=COLOR_CARD_BG, corner_radius=RADIUS_MD)
-        self.top_bar.pack(fill="x", padx=8, pady=(6, 3))
+        self.top_bar.pack(fill="x", padx=8, pady=(6, 5))
         # The global toolbar uses one line when the window is wide enough,
         # and a compact two-line layout only when necessary. Nothing is hidden.
         self.brand_bar = ctk.CTkFrame(self.top_bar, fg_color="transparent")
@@ -224,7 +224,9 @@ class App(ctk.CTk):
 
         # All instance tabs stay on one row without a horizontal scrollbar.
         self.instance_tabs = HorizontalInstanceTabs(self, command=self._select_instance)
-        self.instance_tabs.pack(fill="x", padx=8, pady=(0, 3))
+        # Distinct breathing room between the global action bar, slim
+        # instance tabs, and the device status section.
+        self.instance_tabs.pack(fill="x", padx=8, pady=(4, 7))
 
         # --- Main Workspace: Tab View ---
         self.tabview = ScalableTabView(self)

@@ -248,8 +248,13 @@ class InstanceTabFrame(ctk.CTkFrame):
         # --- Main Body (Split into Log View and Templates View) ---
         self.body_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.body_frame.pack(fill="both", expand=True, padx=8, pady=(2, 4))
-        self.body_frame.grid_columnconfigure(0, weight=4)
-        self.body_frame.grid_columnconfigure(1, weight=6)
+        # Template page content has different natural requested sizes. Do not
+        # let a CTkTabview switch reflow the parent grid and resize the log.
+        # A shared uniform grid ensures the exact same 40:60 split on every
+        # page even if a template has a longer action caption.
+        self.body_frame.grid_propagate(False)
+        self.body_frame.grid_columnconfigure(0, weight=4, uniform="body-split")
+        self.body_frame.grid_columnconfigure(1, weight=6, uniform="body-split")
         self.body_frame.grid_rowconfigure(0, weight=1)
 
         # Left Column: Log Box Frame
@@ -289,6 +294,7 @@ class InstanceTabFrame(ctk.CTkFrame):
         # Right Column: Active & Fallback Templates Frame
         self.templates_main_frame = ctk.CTkFrame(self.body_frame, fg_color="transparent")
         self.templates_main_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0), pady=5)
+        self.templates_main_frame.grid_propagate(False)
         self.templates_main_frame.grid_rowconfigure(0, weight=1)
         self.templates_main_frame.grid_columnconfigure(0, weight=1)
 
@@ -298,6 +304,11 @@ class InstanceTabFrame(ctk.CTkFrame):
         
         self.tab_primary = self.template_tabview.add("📋 기본 템플릿")
         self.tab_fallback = self.template_tabview.add("⚡ 미매칭 템플릿")
+        # CTkTabview's child frames otherwise forward their different pack
+        # requests to its own geometry. Both tabs instead receive the same
+        # viewport allocated by their parent regardless of number of rows.
+        self.tab_primary.pack_propagate(False)
+        self.tab_fallback.pack_propagate(False)
 
         # --- Setup Primary Tab ---
         self.primary_header_frame = ctk.CTkFrame(self.tab_primary, fg_color="transparent")
