@@ -97,11 +97,13 @@ class App(ctk.CTk):
         self._ui_pump_id = self.after(50, self._drain_ui_queue)
         self._timer_pump_id = self.after(500, self._pump_timer_updates)
 
-        # Preload templates in background thread
-        threading.Thread(
-            target=self._preload_configured_templates,
-            daemon=True,
-        ).start()
+        # Avoid eagerly decoding every template and all of its image pyramid
+        # levels at launch. Matching already loads and caches images on demand.
+        # Full preload remains opt-in for users who trade RAM for warmup speed.
+        if AutoClicker.read_config(CONFIG_PATH).get(
+            "preload_templates_on_startup", False
+        ):
+            self.after(1800, self._start_template_preload)
 
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -309,6 +311,12 @@ class App(ctk.CTk):
             frame.focus_search_box()
             return "break"
 
+    def _start_template_preload(self):
+        if not self._closing:
+            threading.Thread(
+                target=self._preload_configured_templates, daemon=True
+            ).start()
+
     @staticmethod
     def _preload_configured_templates():
         config = AutoClicker.read_config(CONFIG_PATH)
@@ -458,7 +466,9 @@ class App(ctk.CTk):
             self.instance_selector.set(first_tab)
             self.instance_tabs.set_selected(first_tab)
             self._set_active_log_frame(first_tab)
-            self.tab_frames[first_tab].ensure_templates_rendered()
+            # Paint the controls and window chrome before constructing the
+            # large 20+ row CustomTkinter template lists.
+            self.after_idle(self.tab_frames[first_tab].ensure_templates_rendered)
 
         if config.get("reset_counts_on_startup", False):
             self.reset_all_template_counts(is_fallback=False)

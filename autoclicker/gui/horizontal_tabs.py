@@ -19,10 +19,10 @@ def compact_instance_label(name, slot_width, warning=False):
     short = match.group(1) if match else name.split(" (", 1)[0]
     port = re.search(r":(\d+)\)?$", name)
     # Reclaim room without deleting the useful original port numbers.
-    if slot_width >= 110:
+    if slot_width >= 90:
         caption = f"Inst {short} :{port.group(1)}" if port else f"Inst {short}"
     elif slot_width >= 65:
-        caption = f"Inst {short}"
+        caption = f"{short} :{port.group(1)}" if port else f"Inst {short}"
     else:
         caption = short[:4]
     return f"⚠ {caption}" if warning else caption
@@ -39,6 +39,10 @@ class HorizontalInstanceTabs(ctk.CTkFrame):
         self._warnings = set()
         self._font = ctk.CTkFont(size=13, weight="bold")
         self._last_slot = None
+        self.configure(height=30)
+        # Ignore the requested width of child buttons: the real available
+        # width controls their size, not the other way around.
+        self.grid_propagate(False)
         self.bind("<Configure>", self._on_resize)
 
     @property
@@ -51,10 +55,9 @@ class HorizontalInstanceTabs(ctk.CTkFrame):
         if not self._buttons:
             return
         width = event.width if event is not None else self.winfo_width()
-        slot = max(1, (width - 4 * len(self._buttons)) // len(self._buttons))
-        tier = 2 if slot >= 110 else (1 if slot >= 65 else 0)
-        if tier != self._last_slot:
-            self._last_slot = tier
+        slot = min(100, max(1, (width - 2 * len(self._buttons)) // len(self._buttons)))
+        if slot != self._last_slot:
+            self._last_slot = slot
             self._render()
 
     def set_tabs(self, names, selected=None):
@@ -69,16 +72,16 @@ class HorizontalInstanceTabs(ctk.CTkFrame):
         for name in names:
             if name not in self._buttons:
                 self._buttons[name] = ctk.CTkButton(
-                    self, text="", width=1, height=34, corner_radius=5,
+                    self, text="", width=1, height=26, corner_radius=4,
                     font=self._font,
                     command=lambda value=name: self._command(value),
                 )
             self._buttons[name].grid_forget()
         self._buttons = {name: self._buttons[name] for name in names}
         for index, name in enumerate(names):
-            self.grid_columnconfigure(index, weight=1, uniform="instance", minsize=0)
+            self.grid_columnconfigure(index, weight=0, minsize=0)
             self._buttons[name].grid(
-                row=0, column=index, sticky="ew", padx=2, pady=3
+                row=0, column=index, sticky="w", padx=1, pady=1
             )
         if selected in self._buttons:
             self._selected = selected
@@ -109,7 +112,7 @@ class HorizontalInstanceTabs(ctk.CTkFrame):
         available = self.winfo_width()
         if available < 100:
             available = max(200, self.winfo_toplevel().winfo_width() - 20)
-        slot_width = max(1, (available - 4 * count) // count)
+        slot_width = min(100, max(1, (available - 2 * count) // count))
         active = name == self._selected
         warning = name in self._warnings
         fg = COLOR_PRIMARY if active else (COLOR_DANGER if warning else COLOR_NEUTRAL)
@@ -118,12 +121,12 @@ class HorizontalInstanceTabs(ctk.CTkFrame):
         )
         caption = compact_instance_label(name, slot_width, warning)
         button = self._buttons[name]
-        desired = (caption, fg, hover, active)
+        desired = (caption, fg, hover, active, slot_width)
         if getattr(button, "_instance_style_cache", None) == desired:
             return
         button._instance_style_cache = desired
         button.configure(
-            text=caption, fg_color=fg, hover_color=hover,
+            width=slot_width, text=caption, fg_color=fg, hover_color=hover,
             text_color=COLOR_TEXT_PRIMARY,
             border_width=2 if active else 0,
             border_color=COLOR_TEXT_PRIMARY if active else fg,
