@@ -71,7 +71,7 @@ class CTKContextMenu:
             anchor="w",
             height=30,
             width=180,
-            font=ctk.CTkFont(size=12, weight="bold" if is_danger else "normal"),
+            font=ctk.CTkFont(size=13, weight="bold" if is_danger else "normal"),
             fg_color="transparent",
             text_color="#F87171" if is_danger else COLOR_TEXT_PRIMARY,
             hover_color=COLOR_DANGER if is_danger else COLOR_PRIMARY,

@@ -43,12 +43,12 @@ class TemplateOrderEditor(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self.close)
 
         header = ctk.CTkLabel(
-            self, text="☰ 끌어서 순서 변경", font=ctk.CTkFont(size=18, weight="bold"),
+            self, text="☰ 끌어서 순서 변경", font=ctk.CTkFont(size=19, weight="bold"),
         )
         header.pack(anchor="w", padx=18, pady=(15, 0))
         self.help_label = ctk.CTkLabel(
             self, text=f"전체 {len(self.order)}개 · 마우스로 드래그하거나 우측 버튼으로 이동",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=13),
         )
         self.help_label.pack(anchor="w", padx=18, pady=(1, 9))
 
@@ -71,7 +71,7 @@ class TemplateOrderEditor(ctk.CTkToplevel):
             content, selectmode="browse", activestyle="none", exportselection=False,
             bg="#252A33", fg="#F2F4F8", selectbackground="#2468D4",
             selectforeground="#FFFFFF", highlightthickness=0, borderwidth=0,
-            font=("Malgun Gothic", 11),
+            font=("Malgun Gothic", 12),
         )
         self.listbox.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
         scroll = ctk.CTkScrollbar(content, command=self.listbox.yview)
@@ -98,7 +98,7 @@ class TemplateOrderEditor(ctk.CTkToplevel):
         footer.pack(fill="x", padx=18, pady=(0, 14))
         ctk.CTkLabel(
             footer, text="저장 전에는 실제 템플릿 순서가 변경되지 않습니다.",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=12),
         ).pack(side="left")
         ctk.CTkButton(
             footer, text="저장", width=84, fg_color=COLOR_SUCCESS,

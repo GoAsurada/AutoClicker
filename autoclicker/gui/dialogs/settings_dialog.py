@@ -71,14 +71,14 @@ class SettingsWindow(ctk.CTkToplevel):
         self.header_label = ctk.CTkLabel(
             self.header_frame,
             text="⚙️ 공통 환경 설정 (Global Settings)",
-            font=ctk.CTkFont(size=16, weight="bold")
+            font=ctk.CTkFont(size=17, weight="bold")
         )
         self.header_label.pack(anchor="w")
 
         self.header_sublabel = ctk.CTkLabel(
             self.header_frame,
             text="모든 인스턴스 탭에 공통으로 적용되는 전역 실행 파라미터입니다.",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=12),
             text_color=COLOR_TEXT_MUTED
         )
         self.header_sublabel.pack(anchor="w", pady=(2, 0))
@@ -100,7 +100,7 @@ class SettingsWindow(ctk.CTkToplevel):
             lbl = ctk.CTkLabel(
                 card,
                 text=title,
-                font=ctk.CTkFont(size=13, weight="bold"),
+                font=ctk.CTkFont(size=14, weight="bold"),
                 text_color=COLOR_TEXT_PRIMARY,
                 anchor="w"
             )
@@ -110,10 +110,10 @@ class SettingsWindow(ctk.CTkToplevel):
         def make_entry_row(parent, label_text, default_val, unit="s"):
             row = ctk.CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", padx=14, pady=(0, 6))
-            lbl = ctk.CTkLabel(row, text=label_text, anchor="w", font=ctk.CTkFont(size=12))
+            lbl = ctk.CTkLabel(row, text=label_text, anchor="w", font=ctk.CTkFont(size=13))
             lbl.pack(side="left", fill="x", expand=True)
             if unit:
-                unit_lbl = ctk.CTkLabel(row, text=unit, text_color=COLOR_TEXT_MUTED, font=ctk.CTkFont(size=11))
+                unit_lbl = ctk.CTkLabel(row, text=unit, text_color=COLOR_TEXT_MUTED, font=ctk.CTkFont(size=12))
                 unit_lbl.pack(side="right", padx=(4, 0))
             entry = ctk.CTkEntry(row, width=75, height=28, corner_radius=RADIUS_SM, justify="center")
             entry.insert(0, str(default_val))
@@ -147,7 +147,7 @@ class SettingsWindow(ctk.CTkToplevel):
             variable=self.grayscale_var,
             onvalue="on",
             offvalue="off",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=13),
             command=self.save_settings,
         )
         self.grayscale_switch.pack(fill="x", padx=14, pady=(2, 10))
@@ -169,7 +169,7 @@ class SettingsWindow(ctk.CTkToplevel):
             variable=self.reset_counts_var,
             onvalue="on",
             offvalue="off",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=13),
             command=self.save_settings,
         )
         self.reset_counts_switch.pack(fill="x", padx=14, pady=(2, 10))
@@ -182,7 +182,7 @@ class SettingsWindow(ctk.CTkToplevel):
         
         action_row = ctk.CTkFrame(self.card_nomatch, fg_color="transparent")
         action_row.pack(fill="x", padx=14, pady=(0, 6))
-        action_lbl = ctk.CTkLabel(action_row, text="수행할 복구 동작:", anchor="w", font=ctk.CTkFont(size=12))
+        action_lbl = ctk.CTkLabel(action_row, text="수행할 복구 동작:", anchor="w", font=ctk.CTkFont(size=13))
         action_lbl.pack(side="left", padx=(0, 10))
         
         self.no_match_combo = ctk.CTkOptionMenu(
@@ -204,10 +204,10 @@ class SettingsWindow(ctk.CTkToplevel):
         self.coord_frame.pack(fill="x", padx=14, pady=(0, 10))
 
         coords = getattr(self.clicker, 'no_match_coords', [500, 500])
-        coord_lbl = ctk.CTkLabel(self.coord_frame, text="클릭 대상 좌표:", anchor="w", font=ctk.CTkFont(size=12))
+        coord_lbl = ctk.CTkLabel(self.coord_frame, text="클릭 대상 좌표:", anchor="w", font=ctk.CTkFont(size=13))
         coord_lbl.pack(side="left", padx=(0, 6))
 
-        self.coord_x_label = ctk.CTkLabel(self.coord_frame, text="X:", font=ctk.CTkFont(size=11), text_color=COLOR_TEXT_MUTED)
+        self.coord_x_label = ctk.CTkLabel(self.coord_frame, text="X:", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_MUTED)
         self.coord_x_label.pack(side="left", padx=(0, 2))
         self.coord_x_entry = ctk.CTkEntry(self.coord_frame, width=55, height=28, corner_radius=RADIUS_SM, justify="center")
         self.coord_x_entry.insert(0, str(coords[0]))
@@ -215,7 +215,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.coord_x_entry.bind("<KeyRelease>", self.schedule_save)
         self.coord_x_entry.bind("<FocusOut>", lambda e: self.save_settings())
 
-        self.coord_y_label = ctk.CTkLabel(self.coord_frame, text="Y:", font=ctk.CTkFont(size=11), text_color=COLOR_TEXT_MUTED)
+        self.coord_y_label = ctk.CTkLabel(self.coord_frame, text="Y:", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_MUTED)
         self.coord_y_label.pack(side="left", padx=(0, 2))
         self.coord_y_entry = ctk.CTkEntry(self.coord_frame, width=55, height=28, corner_radius=RADIUS_SM, justify="center")
         self.coord_y_entry.insert(0, str(coords[1]))
@@ -248,7 +248,7 @@ class SettingsWindow(ctk.CTkToplevel):
 
         mode_row = ctk.CTkFrame(self.card_adb, fg_color="transparent")
         mode_row.pack(fill="x", padx=14, pady=(0, 6))
-        mode_lbl = ctk.CTkLabel(mode_row, text="ADB 모드:", anchor="w", font=ctk.CTkFont(size=12))
+        mode_lbl = ctk.CTkLabel(mode_row, text="ADB 모드:", anchor="w", font=ctk.CTkFont(size=13))
         mode_lbl.pack(side="left", padx=(0, 10))
 
         curr_adb_mode = getattr(self.clicker, "adb_mode", "bundled")
@@ -270,7 +270,7 @@ class SettingsWindow(ctk.CTkToplevel):
         adb_path_lbl = ctk.CTkLabel(
             self.custom_adb_frame,
             text="경로:",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=13),
             text_color=COLOR_TEXT_MUTED,
         )
         adb_path_lbl.pack(side="left", padx=(0, 6))
@@ -300,7 +300,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.adb_status_label = ctk.CTkLabel(
             self.card_adb,
             text=f"현재 적용: {self.clicker.adb_path}",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=12),
             text_color=COLOR_TEXT_MUTED,
             anchor="w",
         )

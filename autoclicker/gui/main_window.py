@@ -107,23 +107,23 @@ class App(ctk.CTk):
 
         # --- Top Global Control Toolbar ---
         self.top_bar = ctk.CTkFrame(self, fg_color=COLOR_CARD_BG, corner_radius=RADIUS_MD)
-        self.top_bar.pack(fill="x", padx=10, pady=(10, 5))
-        # Fixed-width controls on one line forced geometry overflow on
-        # narrow and high-DPI desktops. Split them into independent rows.
+        self.top_bar.pack(fill="x", padx=8, pady=(6, 3))
+        # The global toolbar uses one line when the window is wide enough,
+        # and a compact two-line layout only when necessary. Nothing is hidden.
+        self.brand_bar = ctk.CTkFrame(self.top_bar, fg_color="transparent")
         self.nav_bar = ctk.CTkFrame(self.top_bar, fg_color="transparent")
-        self.nav_bar.pack(fill="x", padx=8, pady=(6, 0))
         self.action_bar = ctk.CTkFrame(self.top_bar, fg_color="transparent")
-        self.action_bar.pack(fill="x", padx=8, pady=(0, 6))
+        self._toolbar_compact = None
 
         self.logo_label = ctk.CTkLabel(
-            self.nav_bar, 
+            self.brand_bar,
             text="⚡ Auto Clicker", 
-            font=ctk.CTkFont(size=17, weight="bold")
+            font=ctk.CTkFont(size=18, weight="bold")
         )
-        self.logo_label.pack(side="left", padx=(16, 16), pady=8)
+        self.logo_label.pack(side="left", padx=(10, 6), pady=4)
 
         # Top Bar Control Buttons (Unified style & font)
-        btn_font = ctk.CTkFont(size=12, weight="bold")
+        btn_font = ctk.CTkFont(size=13, weight="bold")
 
         self.connect_all_btn = ctk.CTkButton(
             self.action_bar,
@@ -136,7 +136,7 @@ class App(ctk.CTk):
             corner_radius=RADIUS_MD,
             command=self.connect_all_instances
         )
-        self.connect_all_btn.pack(side="left", padx=4, pady=8)
+        self.connect_all_btn.pack(side="left", padx=3, pady=4)
 
         self.disconnect_all_btn = ctk.CTkButton(
             self.action_bar,
@@ -149,7 +149,7 @@ class App(ctk.CTk):
             corner_radius=RADIUS_MD,
             command=self.disconnect_all_instances,
         )
-        self.disconnect_all_btn.pack(side="left", padx=4, pady=8)
+        self.disconnect_all_btn.pack(side="left", padx=3, pady=4)
 
         self.start_all_btn = ctk.CTkButton(
             self.action_bar,
@@ -162,7 +162,7 @@ class App(ctk.CTk):
             corner_radius=RADIUS_MD,
             command=self.start_all_clickers
         )
-        self.start_all_btn.pack(side="left", padx=4, pady=8)
+        self.start_all_btn.pack(side="left", padx=3, pady=4)
 
         self.stop_all_btn = ctk.CTkButton(
             self.action_bar,
@@ -175,7 +175,7 @@ class App(ctk.CTk):
             corner_radius=RADIUS_MD,
             command=self.stop_all_clickers
         )
-        self.stop_all_btn.pack(side="left", padx=4, pady=8)
+        self.stop_all_btn.pack(side="left", padx=3, pady=4)
 
         self.add_tab_btn = ctk.CTkButton(
             self.action_bar,
@@ -188,7 +188,7 @@ class App(ctk.CTk):
             corner_radius=RADIUS_MD,
             command=self.add_new_instance_dialog
         )
-        self.add_tab_btn.pack(side="left", padx=4, pady=8)
+        self.add_tab_btn.pack(side="left", padx=3, pady=4)
 
         # Settings Button (Top-Right 최상단 우측)
         self.settings_btn = ctk.CTkButton(
@@ -202,30 +202,31 @@ class App(ctk.CTk):
             corner_radius=RADIUS_MD,
             command=self.open_global_settings
         )
-        self.settings_btn.pack(side="right", padx=(4, 16), pady=8)
+        self.settings_btn.pack(side="right", padx=(3, 8), pady=4)
         self.instance_selector = ctk.CTkOptionMenu(
             self.nav_bar, values=["인스턴스 선택"], width=140,
-            height=34, font=ctk.CTkFont(size=12),
+            height=34, font=ctk.CTkFont(size=13),
             command=self._select_instance,
         )
-        self.instance_selector.pack(side="right", padx=(4, 8), pady=8)
+        self.instance_selector.pack(side="right", padx=(3, 5), pady=4)
         self.warning_button = ctk.CTkButton(
             self.nav_bar, text="⚠ 0", width=45, height=34,
             fg_color=COLOR_WARNING, hover_color=COLOR_WARNING_HOVER,
             command=self._jump_to_warning, state="disabled",
         )
-        self.warning_button.pack(side="right", padx=(2, 4), pady=8)
+        self.warning_button.pack(side="right", padx=(2, 3), pady=4)
+        # Start conservatively so the initial requested width remains small
+        # even before the window is mapped; expand to one row on Configure.
+        self._arrange_toolbar_layout(compact=True)
+        self.top_bar.bind("<Configure>", self._on_toolbar_resize)
 
-
-        # Restore the original horizontal instance bar. Its viewport scrolls
-        # independently of the content, so ten or more tabs cannot force
-        # the main window wider.
+        # All instance tabs stay on one row without a horizontal scrollbar.
         self.instance_tabs = HorizontalInstanceTabs(self, command=self._select_instance)
-        self.instance_tabs.pack(fill="x", padx=10, pady=(0, 4))
+        self.instance_tabs.pack(fill="x", padx=8, pady=(0, 3))
 
         # --- Main Workspace: Tab View ---
         self.tabview = ScalableTabView(self)
-        self.tabview.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self.tabview.pack(fill="both", expand=True, padx=8, pady=(0, 6))
 
         # Load saved instances or create initial tab
         self.load_and_initialize_tabs()
@@ -237,6 +238,24 @@ class App(ctk.CTk):
 
         # Auto refresh devices after short delay
         self.after(500, self.refresh_all_devices)
+
+    def _on_toolbar_resize(self, event):
+        # 1,110px fits full controls and current 10-tab bar at default DPI;
+        # only re-pack when crossing the breakpoint.
+        self._arrange_toolbar_layout(compact=event.width < 1110)
+
+    def _arrange_toolbar_layout(self, compact):
+        if self._toolbar_compact == compact:
+            return
+        self._toolbar_compact = compact
+        for bar in (self.brand_bar, self.action_bar, self.nav_bar):
+            bar.pack_forget()
+        if compact:
+            self.action_bar.pack(side="bottom", fill="x", padx=5, pady=(0, 2))
+        self.brand_bar.pack(side="left", padx=(3, 0))
+        self.nav_bar.pack(side="right", padx=(0, 3))
+        if not compact:
+            self.action_bar.pack(side="left", padx=(4, 0))
 
     def update_instance_warning(self, tab_name, is_warning):
         if is_warning == (tab_name in self.warning_tabs):
