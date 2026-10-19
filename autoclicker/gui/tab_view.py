@@ -493,24 +493,30 @@ class InstanceTabFrame(ctk.CTkFrame):
         )
         self.fallback_next_btn.pack(side="right")
 
-        # --- Fallback Final Action Control (Bottom Panel) ---
-        self.fallback_final_frame = ctk.CTkFrame(self.tab_fallback, fg_color=COLOR_CARD_BG, corner_radius=RADIUS_MD)
-        self.fallback_final_frame.pack(fill="x", padx=5, pady=(0, 5))
+        # Stable common footer: placing the final-action controls inside the
+        # fallback page alone made the two template pages different heights,
+        # triggering expensive CTk canvas resize/reflow every tab switch.
+        # This setting is shared and relevant to either template page.
+        self.fallback_final_frame = ctk.CTkFrame(
+            self.templates_main_frame, fg_color=COLOR_CARD_BG,
+            corner_radius=RADIUS_MD,
+        )
+        self.fallback_final_frame.grid(
+            row=1, column=0, sticky="ew", padx=5, pady=(0, 3)
+        )
         self.fb_final_header_row = ctk.CTkFrame(
             self.fallback_final_frame, fg_color="transparent"
         )
-        self.fb_final_header_row.pack(fill="x", padx=5, pady=(4, 0))
-        self.fb_final_action_row = ctk.CTkFrame(
-            self.fallback_final_frame, fg_color="transparent"
-        )
-        self.fb_final_action_row.pack(fill="x", padx=5, pady=(0, 4))
+        self.fb_final_header_row.pack(fill="x", padx=5, pady=2)
+        # Preserve the public alias while using one compact line.
+        self.fb_final_action_row = self.fb_final_header_row
 
         self.fb_final_title = ctk.CTkLabel(
             self.fb_final_header_row,
-            text="📌 최종 탈출 동작:",
+            text="📌 미매칭 최종 동작:",
             font=ctk.CTkFont(size=13, weight="bold")
         )
-        self.fb_final_title.pack(side="left", padx=(12, 8), pady=8)
+        self.fb_final_title.pack(side="left", padx=(6, 5), pady=3)
 
         curr_fb_action = getattr(self.clicker, 'fallback_final_action', 'none')
         curr_fb_label = NO_MATCH_ACTION_MAP.get(curr_fb_action, "사용 안 함 (Disabled)")
@@ -530,11 +536,11 @@ class InstanceTabFrame(ctk.CTkFrame):
             command=self.on_fallback_final_action_changed
         )
         self.fb_final_combo.set(curr_fb_label)
-        self.fb_final_combo.pack(side="left", padx=(0, 8), pady=8)
+        self.fb_final_combo.pack(side="left", padx=(0, 6), pady=3)
 
         # Coordinate inputs
         self.fb_final_coord_frame = ctk.CTkFrame(self.fb_final_action_row, fg_color="transparent")
-        self.fb_final_coord_frame.pack(side="left", padx=(0, 8), pady=8)
+        self.fb_final_coord_frame.pack(side="left", padx=(0, 5), pady=3)
 
         coords = getattr(self.clicker, 'fallback_final_coords', [500, 500])
         self.fb_final_x_label = ctk.CTkLabel(self.fb_final_coord_frame, text="X:")
@@ -578,7 +584,7 @@ class InstanceTabFrame(ctk.CTkFrame):
             corner_radius=RADIUS_SM,
             command=self.test_fallback_final_action
         )
-        self.fb_final_test_btn.pack(side="right", padx=(8, 12), pady=8)
+        self.fb_final_test_btn.pack(side="right", padx=(4, 6), pady=3)
 
         # Render the first selected instance only; defer the others.
 
@@ -1668,7 +1674,7 @@ class InstanceTabFrame(ctk.CTkFrame):
 
     def update_fb_final_coord_visibility(self, action_key):
         if action_key in ("custom_click", "custom_double_click"):
-            self.fb_final_coord_frame.pack(side="left", padx=(0, 5), pady=6)
+            self.fb_final_coord_frame.pack(side="left", padx=(0, 5), pady=3)
         else:
             self.fb_final_coord_frame.pack_forget()
 
