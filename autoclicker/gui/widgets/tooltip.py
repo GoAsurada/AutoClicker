@@ -126,7 +126,10 @@ class TemplatePreviewTooltip:
         if root_window is not self._bound_root:
             self._bound_root = root_window
             try:
-                root_window.bind("<FocusOut>", lambda _event: self.hide(), add="+")
+                # A transient popup can move keyboard focus away from the
+                # main Tk root while AutoClicker remains the foreground app.
+                # Do NOT hide on its raw <FocusOut> (it made the tooltip
+                # destroy itself immediately after creation).
                 root_window.bind("<Unmap>", lambda _event: self.hide(), add="+")
             except tk.TclError:
                 pass
@@ -182,7 +185,10 @@ class TemplatePreviewTooltip:
             self.tip_window = None
 
     def _hover_still_valid(self, widget):
-        return self._cursor_inside(widget) and _our_app_is_foreground()
+        # Showing a preview must not depend on a possibly stale foreground
+        # process ID (PyInstaller onefile uses a parent/child process).
+        # Cursor containment is sufficient to allow the initial preview.
+        return self._cursor_inside(widget)
 
     def _watch_hover(self):
         pending = self._dismiss_after_id
@@ -197,7 +203,11 @@ class TemplatePreviewTooltip:
                     widget.after_cancel(pending)
             except tk.TclError:
                 pass
-        if widget is None or not self._hover_still_valid(widget):
+        if (
+            widget is None
+            or not self._hover_still_valid(widget)
+            or not _our_app_is_foreground()
+        ):
             self.hide()
             return
         if self.tip_window is None or not self.tip_window.winfo_exists():
@@ -283,6 +293,9 @@ class TemplatePreviewTooltip:
                 x, y, tw.winfo_reqwidth(), tw.winfo_reqheight(), bounds,
             )
             tw.wm_geometry(f"+{pos_x}+{pos_y}")
+            # Transient ownership keeps the popup with AutoClicker without a
+            # system-global topmost flag. Avoid lift(parent): Tk's window
+            # manager can reject it for an override-redirect popup.
             self._visible_widget = widget
             self._dismiss_after_id = widget.after(150, self._watch_hover)
         except (OSError, tk.TclError, RuntimeError, ValueError):
