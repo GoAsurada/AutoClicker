@@ -78,13 +78,45 @@ class TooltipLifecycleTests(unittest.TestCase):
         self.assertIsNone(self.tooltip._dismiss_after_id)
         self.assertIsNone(self.tooltip.tip_window)
 
-    def test_root_focus_out_hides_preview(self):
+    def test_root_focus_out_does_not_immediately_destroy_preview(self):
+        # Windows can emit root FocusOut when Tk creates a transient popup.
+        # This must not cancel a valid thumbnail still hovered in AutoClicker.
         with patch.object(self.tooltip, "_hover_still_valid", return_value=True):
             self.tooltip.show(self.widget, self.image_path, "Image")
         self.assertIsNotNone(self.tooltip.tip_window)
         self.root.event_generate("<FocusOut>")
-        self.root.update()
+        self.root.update_idletasks()
+        self.assertIsNotNone(self.tooltip.tip_window)
+
+    def test_foreground_process_detection_cannot_block_initial_show(self):
+        with patch.object(self.tooltip, "_cursor_inside", return_value=True), patch(
+            "autoclicker.gui.widgets.tooltip._our_app_is_foreground",
+            return_value=False,
+        ):
+            self.tooltip.show(self.widget, self.image_path, "Image")
+        self.assertIsNotNone(self.tooltip.tip_window)
+
+    def test_background_app_hides_on_watchdog_not_on_show(self):
+        with patch.object(self.tooltip, "_hover_still_valid", return_value=True):
+            self.tooltip.show(self.widget, self.image_path, "Image")
+        self.assertIsNotNone(self.tooltip.tip_window)
+        with patch(
+            "autoclicker.gui.widgets.tooltip._our_app_is_foreground",
+            return_value=False,
+        ), patch.object(self.tooltip, "_cursor_inside", return_value=True):
+            self.tooltip._watch_hover()
         self.assertIsNone(self.tooltip.tip_window)
+
+    def test_delayed_hover_creates_a_preview_when_pointer_is_still_inside(self):
+        import time
+        with patch.object(self.tooltip, "_cursor_inside", return_value=True):
+            self.tooltip.schedule_show(
+                self.widget, self.image_path, "Google Back3.png"
+            )
+            time.sleep(0.23)
+            self.root.update()
+        self.assertIsNotNone(self.tooltip.tip_window)
+
 
 
 if __name__ == "__main__":
