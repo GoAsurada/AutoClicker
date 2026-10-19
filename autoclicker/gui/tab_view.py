@@ -1437,7 +1437,9 @@ class InstanceTabFrame(ctk.CTkFrame):
 
         def on_leave(e):
             tooltip = TemplatePreviewTooltip.get_instance(self.winfo_toplevel())
-            tooltip.cancel()
+            # CTkLabel has an inner canvas and a Tk Label. Moving between them
+            # may emit Leave even while still over the filename control.
+            tooltip.schedule_hide_if_left(label)
 
         # Right-click Context Menu (우클릭 컨텍스트 메뉴)
         def show_context_menu(event):
