@@ -15,7 +15,7 @@ from autoclicker.gui.template_order_editor import (
 class LayoutLogicTests(unittest.TestCase):
     def test_compact_labels_fit_small_slots(self):
         self.assertEqual(compact_instance_label("Inst 12 (127.0.0.1:5557)", 45), "12")
-        self.assertEqual(compact_instance_label("Inst 12 (127.0.0.1:5557)", 80), "Inst 12")
+        self.assertEqual(compact_instance_label("Inst 12 (127.0.0.1:5557)", 80), "12 :5557")
         self.assertEqual(compact_instance_label("Inst 12 (127.0.0.1:5557)", 125), "Inst 12 :5557")
         self.assertEqual(compact_instance_label("Inst 12 (127.0.0.1:5557)", 45, True), "⚠ 12")
 
