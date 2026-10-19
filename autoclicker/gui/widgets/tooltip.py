@@ -1,102 +1,42 @@
-"""Safe, parent-owned hover preview for template thumbnails.
+"""Preview template images as an in-app overlay rather than an OS popup.
 
-A preview must never remain on top of other applications after the user
-switches windows. Placement is bounded to the cursor's monitor work area,
-not the primary screen's width (which is wrong for multiple monitors).
+Separate Tk Toplevel windows were not reliably visible in packaged Windows
+builds.  A regular child Frame lives within AutoClicker's root window, so it
+cannot get lost behind the parent or remain on top of another application.
 """
-import ctypes
+from collections import OrderedDict
 import os
-import sys
 import tkinter as tk
 
 from PIL import Image, ImageTk
 
 
-def _cursor_monitor_work_area(x, y, widget):
-    """Return (left, top, right, bottom) of the cursor monitor's work area."""
-    if sys.platform == "win32":
-        try:
-            class POINT(ctypes.Structure):
-                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+def in_app_preview_position(anchor, preview_size, client_size, margin=8):
+    """Place below/above the hovered row, inside the app, without covering it.
 
-            class RECT(ctypes.Structure):
-                _fields_ = [
-                    ("left", ctypes.c_long), ("top", ctypes.c_long),
-                    ("right", ctypes.c_long), ("bottom", ctypes.c_long),
-                ]
-
-            class MONITORINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", ctypes.c_ulong), ("rcMonitor", RECT),
-                    ("rcWork", RECT), ("dwFlags", ctypes.c_ulong),
-                ]
-
-            user32 = ctypes.windll.user32
-            user32.MonitorFromPoint.argtypes = [POINT, ctypes.c_ulong]
-            user32.MonitorFromPoint.restype = ctypes.c_void_p
-            user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
-            user32.GetMonitorInfoW.restype = ctypes.c_int
-            monitor = user32.MonitorFromPoint(POINT(int(x), int(y)), 2)
-            info = MONITORINFO()
-            info.cbSize = ctypes.sizeof(MONITORINFO)
-            if monitor and user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
-                rect = info.rcWork
-                return rect.left, rect.top, rect.right, rect.bottom
-        except (AttributeError, OSError, ValueError):
-            pass
-
-    try:
-        # The virtual root may include monitors left or above the primary.
-        left = widget.winfo_vrootx()
-        top = widget.winfo_vrooty()
-        return (left, top,
-                left + widget.winfo_vrootwidth(),
-                top + widget.winfo_vrootheight())
-    except (tk.TclError, AttributeError):
-        return 0, 0, widget.winfo_screenwidth(), widget.winfo_screenheight()
-
-
-def preview_position(pointer_x, pointer_y, width, height, bounds):
-    """Keep the preview within one monitor; flip when near its edges."""
-    left, top, right, bottom = bounds
-    left += 8
-    top += 8
-    right -= 8
-    bottom -= 8
-    x = pointer_x + 16
-    y = pointer_y + 12
-    if x + width > right:
-        x = pointer_x - width - 12
-    if y + height > bottom:
-        y = pointer_y - height - 10
-    x = max(left, min(x, max(left, right - width)))
-    y = max(top, min(y, max(top, bottom - height)))
+    anchor: (row_left, row_top, row_right, row_bottom, pointer_x).
+    """
+    left, top, right, bottom, pointer = anchor
+    width, height = preview_size
+    client_w, client_h = client_size
+    x = max(margin, min(pointer + 12, max(margin, client_w - width - margin)))
+    below = bottom + 6
+    above = top - height - 6
+    if below + height + margin <= client_h:
+        y = below
+    elif above >= margin:
+        y = above
+    else:
+        # Narrow windows still display the image inside the available area.
+        y = max(margin, min(below, max(margin, client_h - height - margin)))
     return int(x), int(y)
 
 
-def _our_app_is_foreground():
-    """On Windows, never float a thumbnail above an unrelated application."""
-    if sys.platform != "win32":
-        return True
-    try:
-        user32 = ctypes.windll.user32
-        user32.GetForegroundWindow.restype = ctypes.c_void_p
-        hwnd = user32.GetForegroundWindow()
-        if not hwnd:  # Inaccessible desktop: rely on cursor containment.
-            return True
-        pid = ctypes.c_ulong()
-        user32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(pid))
-        return pid.value == os.getpid()
-    except (AttributeError, OSError):
-        return True
-
-
 class TemplatePreviewTooltip:
-    """Small hover preview owned by AutoClicker, never globally topmost."""
+    """One bounded thumbnail overlay for the AutoClicker application."""
 
     _instance = None
-    _image_cache = {}
-    _image_cache_order = []
+    _image_cache = OrderedDict()
     _IMAGE_CACHE_MAX = 50
 
     @classmethod
@@ -110,27 +50,31 @@ class TemplatePreviewTooltip:
     def __init__(self, root_window=None):
         self.root = None
         self._bound_root = None
-        self.tip_window = None
+        self.tip_window = None  # compatibility: now an in-app tk.Frame
         self._hover_after_id = None
         self._dismiss_after_id = None
         self._scheduled_widget = None
         self._visible_widget = None
+        self._leave_after_id = None
+        self._leave_widget = None
+        self._last_error = None
+        self._show_attempts = 0
+        self._panel_creations = 0
         if root_window is not None:
             self._set_root(root_window)
 
     def _set_root(self, root_window):
-        if root_window is self.root:
+        if self.root is root_window:
             return
-        self.cancel()
+        self.hide()
         self.root = root_window
         if root_window is not self._bound_root:
             self._bound_root = root_window
             try:
-                # A transient popup can move keyboard focus away from the
-                # main Tk root while AutoClicker remains the foreground app.
-                # Do NOT hide on its raw <FocusOut> (it made the tooltip
-                # destroy itself immediately after creation).
-                root_window.bind("<Unmap>", lambda _event: self.hide(), add="+")
+                # A child panel cannot float above other applications.
+                # Avoid FocusOut entirely: it can also fire while focus
+                # moves between controls inside AutoClicker.
+                root_window.bind("<Unmap>", lambda _evt: self.hide(), add="+")
             except tk.TclError:
                 pass
 
@@ -148,29 +92,68 @@ class TemplatePreviewTooltip:
             return False
 
     def schedule_show(self, widget, image_path, title_text="", offset_text=""):
-        self.cancel()
+        # CTkLabel sends Enter/Leave from BOTH its canvas and inner Tk label.
+        # Do not restart the 100ms delay whenever the cursor crosses between
+        # those two children without leaving the overall template label.
+        self._cancel_pending_leave()
+        if self._scheduled_widget is widget and self._hover_after_id is not None:
+            return
+        if self._visible_widget is widget and self.tip_window is not None:
+            return
+        self.hide()
         self._scheduled_widget = widget
-        self._hover_after_id = widget.after(
-            200, lambda: self.show(widget, image_path, title_text, offset_text)
-        )
+        try:
+            self._hover_after_id = widget.after(
+                100, lambda: self.show(
+                    widget, image_path, title_text, offset_text,
+                    from_hover=True,
+                )
+            )
+        except tk.TclError as exc:
+            self._last_error = str(exc)
+
+    def _cancel_pending_leave(self):
+        if self._leave_after_id is not None and self._leave_widget is not None:
+            try:
+                self._leave_widget.after_cancel(self._leave_after_id)
+            except tk.TclError:
+                pass
+        self._leave_after_id = None
+        self._leave_widget = None
+
+    def schedule_hide_if_left(self, widget):
+        # An immediate Leave handler used to kill the popup when pointer
+        # crossed the native CTkLabel canvas/text boundary.
+        self._cancel_pending_leave()
+        self._leave_widget = widget
+        try:
+            self._leave_after_id = widget.after(65, self._hide_if_left)
+        except tk.TclError:
+            self.hide()
+
+    def _hide_if_left(self):
+        widget = self._leave_widget
+        self._leave_after_id = None
+        self._leave_widget = None
+        if widget is None or not self._cursor_inside(widget):
+            self.hide()
 
     def cancel(self, event=None):
         self.hide()
 
     def hide(self):
-        if self._hover_after_id is not None and self._scheduled_widget is not None:
+        self._cancel_pending_leave()
+        if self._scheduled_widget is not None and self._hover_after_id is not None:
             try:
-                if self._scheduled_widget.winfo_exists():
-                    self._scheduled_widget.after_cancel(self._hover_after_id)
+                self._scheduled_widget.after_cancel(self._hover_after_id)
             except tk.TclError:
                 pass
         self._hover_after_id = None
         self._scheduled_widget = None
 
-        if self._dismiss_after_id is not None and self._visible_widget is not None:
+        if self._visible_widget is not None and self._dismiss_after_id is not None:
             try:
-                if self._visible_widget.winfo_exists():
-                    self._visible_widget.after_cancel(self._dismiss_after_id)
+                self._visible_widget.after_cancel(self._dismiss_after_id)
             except tk.TclError:
                 pass
         self._dismiss_after_id = None
@@ -178,125 +161,124 @@ class TemplatePreviewTooltip:
 
         if self.tip_window is not None:
             try:
-                if self.tip_window.winfo_exists():
-                    self.tip_window.destroy()
+                self.tip_window.destroy()
             except tk.TclError:
                 pass
             self.tip_window = None
 
-    def _hover_still_valid(self, widget):
-        # Showing a preview must not depend on a possibly stale foreground
-        # process ID (PyInstaller onefile uses a parent/child process).
-        # Cursor containment is sufficient to allow the initial preview.
-        return self._cursor_inside(widget)
-
     def _watch_hover(self):
-        pending = self._dismiss_after_id
-        widget = self._visible_widget
+        # Avoid timers surviving a destroyed label or its parent tab.
         self._dismiss_after_id = None
-        # Normally the scheduled callback is now running. If this method is
-        # also called directly during focus/hover races, cancel the previous
-        # Tcl callback so no orphaned _watch_hover survives widget shutdown.
-        if pending is not None and widget is not None:
-            try:
-                if widget.winfo_exists():
-                    widget.after_cancel(pending)
-            except tk.TclError:
-                pass
-        if (
-            widget is None
-            or not self._hover_still_valid(widget)
-            or not _our_app_is_foreground()
-        ):
+        widget = self._visible_widget
+        if widget is None or not self._cursor_inside(widget):
             self.hide()
             return
         if self.tip_window is None or not self.tip_window.winfo_exists():
             self.hide()
             return
-        self._dismiss_after_id = widget.after(150, self._watch_hover)
-
-    def show(self, widget, image_path, title_text="", offset_text=""):
-        if not os.path.isfile(image_path):
-            return
-        if not self._hover_still_valid(widget):
-            self.hide()
-            return
-
-        self.hide()
         try:
-            stat = os.stat(image_path)
-            sig = (image_path, stat.st_mtime_ns)
-            if sig in self._image_cache:
-                photo_img, orig_w, orig_h = self._image_cache[sig]
-            else:
-                with Image.open(image_path) as pil_img:
-                    orig_w, orig_h = pil_img.size
-                    max_w, max_h = 200, 140
-                    scale = min(max_w / max(1, orig_w), max_h / max(1, orig_h), 1.0)
-                    if scale < 1.0:
-                        new_w = max(1, int(orig_w * scale))
-                        new_h = max(1, int(orig_h * scale))
-                        scaled_img = pil_img.resize(
-                            (new_w, new_h), Image.Resampling.LANCZOS
-                        )
-                    else:
-                        scaled_img = pil_img.copy()
-                photo_img = ImageTk.PhotoImage(scaled_img)
-                self._image_cache[sig] = (photo_img, orig_w, orig_h)
-                self._image_cache_order.append(sig)
-                while len(self._image_cache_order) > self._IMAGE_CACHE_MAX:
-                    evict_sig = self._image_cache_order.pop(0)
-                    self._image_cache.pop(evict_sig, None)
+            self._dismiss_after_id = widget.after(130, self._watch_hover)
+        except tk.TclError:
+            self.hide()
 
-            parent = (
-                self.root if self.root is not None and self.root.winfo_exists()
-                else widget.winfo_toplevel()
-            )
-            self.tip_window = tw = tk.Toplevel(parent)
-            tw.wm_overrideredirect(True)
-            tw.wm_transient(parent)
-            # NEVER use wm_attributes("-topmost", True): that caused the
-            # preview to float above Chrome and onto a different monitor.
-            try:
-                tw.wm_attributes("-alpha", 0.97)
-            except tk.TclError:
-                pass
+    @classmethod
+    def _resized_image(cls, path):
+        stat = os.stat(path)
+        sig = (os.path.normcase(os.path.abspath(path)), stat.st_mtime_ns)
+        cached = cls._image_cache.get(sig)
+        if cached is not None:
+            cls._image_cache.move_to_end(sig)
+            return cached
+        with Image.open(path) as original:
+            width, height = original.size
+            original.load()
+            scale = min(200 / max(1, width), 140 / max(1, height), 1.0)
+            image = original.convert("RGBA")
+            if scale < 1:
+                image = image.resize(
+                    (max(1, round(width * scale)), max(1, round(height * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+        result = (image, width, height)
+        cls._image_cache[sig] = result
+        while len(cls._image_cache) > cls._IMAGE_CACHE_MAX:
+            cls._image_cache.popitem(last=False)
+        return result
 
-            container = tk.Frame(
-                tw, background="#1A1D20", highlightbackground="#3B82F6",
-                highlightthickness=1, padx=8, pady=6,
+    def show(self, widget, image_path, title_text="", offset_text="",
+             from_hover=False):
+        # A genuine Enter event is more reliable than rechecking viewability
+        # in an isolated Windows desktop. The watchdog handles pointer exit.
+        self.hide()
+        self._show_attempts += 1
+        self._last_error = None
+        if not os.path.isfile(image_path):
+            self._last_error = f"미리보기 파일 없음: {image_path}"
+            return False
+        try:
+            root = self.root
+            if root is None or not root.winfo_exists():
+                root = widget.winfo_toplevel()
+                self._set_root(root)
+            if not root.winfo_exists():
+                self._last_error = "미리보기 본창이 이미 닫혔습니다."
+                return False
+
+            image, image_width, image_height = self._resized_image(image_path)
+            photo = ImageTk.PhotoImage(image, master=root)
+            panel = tk.Frame(
+                root, background="#1A1D20", highlightbackground="#3B82F6",
+                highlightthickness=1, borderwidth=0, padx=8, pady=6,
             )
-            container.pack(fill="both", expand=True)
+            self.tip_window = panel
             tk.Label(
-                container, text=f"🖼️ {title_text or os.path.basename(image_path)}",
+                panel, text=f"🖼️ {title_text or os.path.basename(image_path)}",
                 font=("Segoe UI", 10, "bold"), foreground="#60A5FA",
                 background="#1A1D20", anchor="w",
             ).pack(fill="x", pady=(0, 4))
-            image_label = tk.Label(
-                container, image=photo_img, background="#0D1117",
+            picture = tk.Label(
+                panel, image=photo, background="#0D1117",
                 relief="solid", borderwidth=1,
             )
-            image_label.image = photo_img
-            image_label.pack(pady=(0, 4))
-            meta = f"크기: {orig_w}x{orig_h}px"
+            picture.image = photo  # Keep the Tk image alive.
+            picture.pack(pady=(0, 4))
+            meta = f"크기: {image_width}x{image_height}px"
             if offset_text:
                 meta += f"  |  {offset_text}"
             tk.Label(
-                container, text=meta, font=("Segoe UI", 9),
+                panel, text=meta, font=("Segoe UI", 9),
                 foreground="#9CA3AF", background="#1A1D20",
             ).pack(fill="x")
 
-            tw.update_idletasks()
-            x, y = widget.winfo_pointerx(), widget.winfo_pointery()
-            bounds = _cursor_monitor_work_area(x, y, widget)
-            pos_x, pos_y = preview_position(
-                x, y, tw.winfo_reqwidth(), tw.winfo_reqheight(), bounds,
+            panel.update_idletasks()
+            label_left = widget.winfo_rootx() - root.winfo_rootx()
+            label_top = widget.winfo_rooty() - root.winfo_rooty()
+            label_right = label_left + widget.winfo_width()
+            label_bottom = label_top + widget.winfo_height()
+            pointer = widget.winfo_pointerx() - root.winfo_rootx()
+            x, y = in_app_preview_position(
+                (label_left, label_top, label_right, label_bottom, pointer),
+                (panel.winfo_reqwidth(), panel.winfo_reqheight()),
+                (root.winfo_width(), root.winfo_height()),
             )
-            tw.wm_geometry(f"+{pos_x}+{pos_y}")
-            # Transient ownership keeps the popup with AutoClicker without a
-            # system-global topmost flag. Avoid lift(parent): Tk's window
-            # manager can reject it for an override-redirect popup.
+            panel.place(x=x, y=y)
+            panel.lift()
             self._visible_widget = widget
-            self._dismiss_after_id = widget.after(150, self._watch_hover)
-        except (OSError, tk.TclError, RuntimeError, ValueError):
+            self._dismiss_after_id = widget.after(130, self._watch_hover)
+            self._panel_creations += 1
+            return True
+        except (OSError, tk.TclError, RuntimeError, ValueError) as exc:
+            self._last_error = f"{type(exc).__name__}: {exc}"
             self.hide()
+            return False
+
+    def diagnostics(self):
+        return {
+            "hover_scheduled": self._hover_after_id is not None,
+            "show_attempts": self._show_attempts,
+            "panel_creations": self._panel_creations,
+            "panel_exists": bool(
+                self.tip_window is not None and self.tip_window.winfo_exists()
+            ),
+            "last_error": self._last_error or "없음",
+        }
