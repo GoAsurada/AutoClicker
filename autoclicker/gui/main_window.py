@@ -364,6 +364,12 @@ class App(ctk.CTk):
         """Inspect queue pressure and UI errors without writing disk logs."""
         stats = self.ui_backlog_stats()
         tail = "\n".join(list(self._ui_recent_errors)[-5:]) or "없음"
+        preview = TemplatePreviewTooltip._instance
+        overlay = preview.diagnostics() if preview is not None else {
+            "hover_scheduled": False, "show_attempts": 0,
+            "panel_creations": 0, "panel_exists": False,
+            "last_error": "미리보기 사용 전",
+        }
         messagebox.showinfo(
             "AutoClicker UI 진단",
             f"인스턴스: {len(self.tab_frames)}개\n"
@@ -371,6 +377,11 @@ class App(ctk.CTk):
             f"최고 대기 작업: {stats['peak_pending']}개\n"
             f"중복 이벤트 통합: {stats['coalesced_replacements']}건\n"
             f"UI 콜백 오류: {stats['ui_callback_errors']}건\n\n"
+            f"미리보기 시도: {overlay['show_attempts']}회\n"
+            f"미리보기 패널 생성: {overlay['panel_creations']}회\n"
+            f"현재 패널 존재: {overlay['panel_exists']}\n"
+            f"미리보기 예약 중: {overlay['hover_scheduled']}\n"
+            f"미리보기 오류: {overlay['last_error']}\n\n"
             f"최근 오류:\n{tail}",
             parent=self,
         )
